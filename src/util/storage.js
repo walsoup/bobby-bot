@@ -180,7 +180,11 @@ export function removeReactionRole(guildId, messageId, emoji = null) {
 }
 
 export function exportGuildConfig(guildId) {
-  return getGuildConfig(guildId);
+  const cfg = JSON.parse(JSON.stringify(getGuildConfig(guildId)));
+  if (cfg.ai_config && cfg.ai_config.apiKey) {
+    delete cfg.ai_config.apiKey;
+  }
+  return cfg;
 }
 
 export function importGuildConfig(guildId, newConfig) {

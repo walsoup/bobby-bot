@@ -41,7 +41,7 @@ import {
   getGuildAutoChatChannel,
   setGuildAutoChatChannel
 } from '../util/storage.js';
-import { isStaffMember, isOwnerOrAdmin, safeEvaluateMath } from '../agent/tools.js';
+import { isStaffMember, isOwnerOrAdmin, isServerOwner, safeEvaluateMath } from '../agent/tools.js';
 import { getAIConfig } from '../agent/config.js';
 import { summarizeMessages, translateText } from '../agent/aiServices.js';
 import {
@@ -233,7 +233,7 @@ export async function handlePrefixCommand(message, client) {
     if (!rest) {
       const keys = Object.keys(memories);
       if (keys.length === 0) {
-        await message.reply({ content: 'No memories saved yet. Staff can add some with `!remember <key> <value>`.' });
+        await message.reply({ content: 'No memories saved yet. Add some with `!remember <key> <value>`.' });
       } else {
         await message.reply({ content: `**Saved Memory Keys (${keys.length}):** \`${keys.join('`, `')}\`\nUse \`!recall <key>\` to view one.` });
       }
@@ -259,7 +259,7 @@ export async function handlePrefixCommand(message, client) {
     const memories = getGuildMemories(message.guild.id);
     const keys = Object.keys(memories);
     if (keys.length === 0) {
-      await message.reply({ content: 'No memories saved yet. Staff can add some with `!remember <key> <value>`.' });
+      await message.reply({ content: 'No memories saved yet. Add some with `!remember <key> <value>`.' });
     } else {
       const list = keys.map((k) => `• **${k}**: ${memories[k].slice(0, 80)}`).join('\n');
       await message.reply({ content: `**Server Memories (${keys.length}):**\n${list}` });
@@ -288,6 +288,10 @@ export async function handlePrefixCommand(message, client) {
 
   // 9. !config / ?config
   if (cmd === 'config') {
+    if (!isStaffMember(message.member, message.guild)) {
+      await message.reply({ content: 'You need staff permissions to view server configuration.' });
+      return true;
+    }
     const cfg = getGuildConfig(message.guild.id);
     const rrs = getGuildReactionRoles(message.guild.id);
 
@@ -377,6 +381,11 @@ export async function handlePrefixCommand(message, client) {
 
   // 12. !model / ?model [model_name]
   if (cmd === 'model') {
+    if (!isOwnerOrAdmin(message.member, message.guild)) {
+      await message.reply({ content: 'Only the Server Owner or an Administrator can view or change the AI model.' });
+      return true;
+    }
+
     const current = getAIConfig(message.guild.id);
     if (!rest) {
       const embed = new EmbedBuilder()
@@ -389,11 +398,6 @@ export async function handlePrefixCommand(message, client) {
           { name: 'To Reset', value: '`!model reset` (reverts back to .env default)', inline: false }
         );
       await message.reply({ embeds: [embed] });
-      return true;
-    }
-
-    if (!isOwnerOrAdmin(message.member, message.guild)) {
-      await message.reply({ content: 'Only the Server Owner or an Administrator can change the AI model.' });
       return true;
     }
 
@@ -412,6 +416,11 @@ export async function handlePrefixCommand(message, client) {
 
   // 13. !apiconfig / ?apiconfig
   if (cmd === 'apiconfig' || cmd === 'ai') {
+    if (!isOwnerOrAdmin(message.member, message.guild)) {
+      await message.reply({ content: 'Only the Server Owner or an Administrator can view or modify the AI provider config.' });
+      return true;
+    }
+
     const current = getAIConfig(message.guild.id);
     if (!rest) {
       const maskedKey = current.apiKey
@@ -428,17 +437,12 @@ export async function handlePrefixCommand(message, client) {
           { name: 'Reasoning Effort', value: `\`${current.reasoningEffort || 'none'}\``, inline: true }
         )
         .setDescription(
-          '**How to configure on the fly (Owner only):**\n' +
+          '**How to configure on the fly (Owner / Admin only):**\n' +
           '• Switch model: `!model <name>`\n' +
           '• Switch provider: `!apiconfig url <url> [key <key>] [model <model>]`\n' +
           '• Revert to default: `!apiconfig reset`'
         );
       await message.reply({ embeds: [embed] });
-      return true;
-    }
-
-    if (!isOwnerOrAdmin(message.member, message.guild)) {
-      await message.reply({ content: 'Only the Server Owner or an Administrator can modify the AI provider config.' });
       return true;
     }
 
@@ -757,7 +761,7 @@ export async function handlePrefixCommand(message, client) {
     const targetChannel = await message.guild.channels.fetch(sgChannelId).catch(() => null);
 
     if (!targetChannel || !targetChannel.isTextBased()) {
-      await message.reply({ content: 'Suggestions channel is not configured. Staff can set it with `!suggest channel #channel`.' });
+      await message.reply({ content: 'Suggestions channel is not configured. Configure it with `!suggest channel #channel`.' });
       return true;
     }
 
@@ -795,7 +799,7 @@ export async function handlePrefixCommand(message, client) {
       return true;
     }
     const id = args[1]?.toLowerCase();
-    const reason = args.slice(2).join(' ').trim() || 'Approved by staff';
+    const reason = args.slice(2).join(' ').trim() || 'Approved';
     if (!id) {
       await message.reply({ content: 'Usage: `!approve <suggestion_id> [reason]`' });
       return true;
@@ -819,7 +823,7 @@ export async function handlePrefixCommand(message, client) {
           .setColor('#57F287')
           .setFields(
             { name: 'Status', value: 'Approved', inline: true },
-            { name: 'Staff Reason', value: reason, inline: false }
+            { name: 'Reason', value: reason, inline: false }
           );
         await msg.edit({ embeds: [newEmbed] }).catch(() => null);
       }
@@ -835,7 +839,7 @@ export async function handlePrefixCommand(message, client) {
       return true;
     }
     const id = args[1]?.toLowerCase();
-    const reason = args.slice(2).join(' ').trim() || 'Denied by staff';
+    const reason = args.slice(2).join(' ').trim() || 'Denied';
     if (!id) {
       await message.reply({ content: 'Usage: `!deny <suggestion_id> [reason]`' });
       return true;
@@ -859,7 +863,7 @@ export async function handlePrefixCommand(message, client) {
           .setColor('#ED4245')
           .setFields(
             { name: 'Status', value: 'Denied', inline: true },
-            { name: 'Staff Reason', value: reason, inline: false }
+            { name: 'Reason', value: reason, inline: false }
           );
         await msg.edit({ embeds: [newEmbed] }).catch(() => null);
       }
@@ -908,7 +912,7 @@ export async function handlePrefixCommand(message, client) {
       const embed = new EmbedBuilder()
         .setColor('#5865F2')
         .setTitle(`Support Ticket #${ticketRecord.ticketNumber}`)
-        .setDescription(`Hello <@${message.author.id}>, staff will assist you shortly.\n\n**Reason:** ${reason}`)
+        .setDescription(`Hello <@${message.author.id}>, someone will assist you shortly.\n\n**Reason:** ${reason}`)
         .setFooter({ text: 'Type !close to close this ticket • !transcript to save history' })
         .setTimestamp();
 

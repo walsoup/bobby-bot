@@ -468,7 +468,7 @@ export async function resolveGiveaway(client, gway) {
       .setTitle(`Giveaway Ended: ${gway.prize}`)
       .setDescription(
         winners.length > 0
-          ? `**Winner(s):** ${winners.map((id) => `<@${id}>`).join(', ')}\nHosted by server staff.`
+          ? `**Winner(s):** ${winners.map((id) => `<@${id}>`).join(', ')}`
           : 'No valid participants reacted with 🎉.'
       )
       .setFooter({ text: 'Giveaway Ended' })

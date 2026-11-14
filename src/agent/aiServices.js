@@ -155,7 +155,8 @@ Rules:
 4. CUSTOM SERVER EMOJIS PREFERRED: Use the server's custom Mei Mei / Tole Tole emojis freely and frequently to bring out the Tole Tole vibe! Avoid generic unicode emoji spam (no sparkles ✨, rockets 🚀, robots 🤖).
 5. ${personaGuide}${emojiGuide}
 6. If the channel is talking about a topic, chime in on that topic naturally. If quiet, share a brief casual remark.
-7. Output ONLY your message without quotes or prefixes.`;
+7. NO "STAFF" JARGON: Never mention or talk about "the staff" or "staff team". You are just a casual homie hanging out.
+8. Output ONLY your message without quotes or prefixes.`;
 
   const userPrompt = formatted
     ? `Recent messages:\n${formatted}\n\nYour casual comment:`

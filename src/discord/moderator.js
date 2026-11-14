@@ -393,7 +393,7 @@ async function handleDirectMessageModmail(message, client) {
 
       await staffChannel.send({ embeds: [embed] });
       await message.reply({
-        content: `Your message has been delivered to the **${guild.name}** staff team. A moderator will review it shortly.`
+        content: `Your message has been delivered to the **${guild.name}** team. Someone will review it shortly.`
       }).catch(() => null);
     } catch (err) {
       console.error('[Modmail Forwarding Error]', err.message);

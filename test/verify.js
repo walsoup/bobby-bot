@@ -811,6 +811,42 @@ async function run() {
     const modelMsg = createMsg('!model deepseek-v4.1', ['ManageMessages']);
     await handlePrefixCommand(modelMsg, mockClient);
     assert.match(modelMsg.getLastReply().content, /Only the Server Owner or an Administrator/i);
+
+    // 11. Regular member attempting !apiconfig (with NO arguments) MUST be blocked
+    const apiConfigMsg = createMsg('!apiconfig', ['SendMessages']);
+    await handlePrefixCommand(apiConfigMsg, mockClient);
+    assert.match(apiConfigMsg.getLastReply().content, /Only the Server Owner or an Administrator/i);
+
+    // 12. Regular member attempting !apiconfig (with args) MUST be blocked
+    const apiConfigSetMsg = createMsg('!apiconfig url https://evil.com', ['SendMessages']);
+    await handlePrefixCommand(apiConfigSetMsg, mockClient);
+    assert.match(apiConfigSetMsg.getLastReply().content, /Only the Server Owner or an Administrator/i);
+
+    // 13. Regular member attempting !model (with NO arguments) MUST be blocked
+    const modelNoArgMsg = createMsg('!model', ['SendMessages']);
+    await handlePrefixCommand(modelNoArgMsg, mockClient);
+    assert.match(modelNoArgMsg.getLastReply().content, /Only the Server Owner or an Administrator/i);
+
+    // 14. Regular member attempting !backup MUST be blocked
+    const backupMsg = createMsg('!backup', ['SendMessages']);
+    await handlePrefixCommand(backupMsg, mockClient);
+    assert.match(backupMsg.getLastReply().content, /need staff permissions/i);
+
+    // 15. Server Owner running !apiconfig succeeds and gets embed
+    const ownerApiMsg = createMsg('!apiconfig', [], true);
+    await handlePrefixCommand(ownerApiMsg, mockClient);
+    assert.ok(ownerApiMsg.getLastReply().embeds?.length > 0);
+
+    // 16. Administrator role running !apiconfig succeeds and gets embed
+    const adminApiMsg = createMsg('!apiconfig', ['Administrator'], false);
+    await handlePrefixCommand(adminApiMsg, mockClient);
+    assert.ok(adminApiMsg.getLastReply().embeds?.length > 0);
+
+    // 17. Member with role named "Admin" (no Administrator flag) running !apiconfig succeeds
+    const adminRoleMsg = createMsg('!apiconfig', [], false);
+    adminRoleMsg.member.roles.highest.name = 'Admin';
+    await handlePrefixCommand(adminRoleMsg, mockClient);
+    assert.ok(adminRoleMsg.getLastReply().embeds?.length > 0);
   });
 
   await test('Ruthless Malformed & Adversarial Input Stress Testing', async () => {

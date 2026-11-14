@@ -3729,10 +3729,20 @@ export const SAFE_MEMBER_TOOLS = new Set([
   'evaluate_math'
 ]);
 
+export function isServerOwner(member, guild) {
+  if (!member) return false;
+  if (process.env.OWNER_DISCORD_ID && member.id === process.env.OWNER_DISCORD_ID.trim()) return true;
+  if (guild && guild.ownerId === member.id) return true;
+  return false;
+}
+
 export function isOwnerOrAdmin(member, guild) {
   if (!member) return false;
-  if (guild && guild.ownerId === member.id) return true;
-  return Boolean(member.permissions?.has(PermissionFlagsBits.Administrator));
+  if (isServerOwner(member, guild)) return true;
+  if (member.permissions?.has?.(PermissionFlagsBits.Administrator)) return true;
+  if (member.roles?.cache?.some?.((r) => /^(admin|administrator|head admin|owner)$/i.test(r.name))) return true;
+  if (member.roles?.highest?.name && /^(admin|administrator|head admin|owner)$/i.test(member.roles.highest.name)) return true;
+  return false;
 }
 
 export function isStaffMember(member, guild) {
