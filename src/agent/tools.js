@@ -3268,6 +3268,9 @@ registerTool({
   }),
   handler: async (args, context = {}) => {
     try {
+      if (!isBotOwner(context.member?.user || context.member, context.client)) {
+        return { ok: false, error: "Only the Bot Owner can change the AI model." };
+      }
       const guildId = context.guildId || context.guild?.id || (await getGuild()).id;
       if (args.model.toLowerCase() === 'reset') {
         resetGuildAIConfig(guildId);
@@ -3729,17 +3732,46 @@ export const SAFE_MEMBER_TOOLS = new Set([
   'evaluate_math'
 ]);
 
-export function isServerOwner(member, guild) {
+let cachedBotOwnerIds = new Set();
+
+export function clearCachedBotOwnerIds() {
+  cachedBotOwnerIds.clear();
+}
+
+export function setCachedBotOwnerId(id) {
+  if (id) cachedBotOwnerIds.add(String(id));
+}
+
+export function isBotOwner(userOrMember, client = null) {
+  const userId = String(userOrMember?.id || userOrMember?.user?.id || userOrMember || '');
+  if (!userId) return false;
+  if (process.env.OWNER_DISCORD_ID && userId === process.env.OWNER_DISCORD_ID.trim()) return true;
+  if (cachedBotOwnerIds.has(userId)) return true;
+  if (client?.application?.owner) {
+    if (client.application.owner.id === userId) {
+      cachedBotOwnerIds.add(userId);
+      return true;
+    }
+    if (client.application.owner.members?.has?.(userId)) {
+      cachedBotOwnerIds.add(userId);
+      return true;
+    }
+  }
+  return false;
+}
+
+export function isServerOwner(member, guild, client = null) {
   if (!member) return false;
-  if (process.env.OWNER_DISCORD_ID && member.id === process.env.OWNER_DISCORD_ID.trim()) return true;
+  if (isBotOwner(member, client)) return true;
   if (guild && guild.ownerId === member.id) return true;
   return false;
 }
 
-export function isOwnerOrAdmin(member, guild) {
+export function isOwnerOrAdmin(member, guild, client = null) {
   if (!member) return false;
-  if (isServerOwner(member, guild)) return true;
+  if (isServerOwner(member, guild, client)) return true;
   if (member.permissions?.has?.(PermissionFlagsBits.Administrator)) return true;
+  if (member.permissions?.has?.(PermissionFlagsBits.ManageGuild)) return true;
   if (member.roles?.cache?.some?.((r) => /^(admin|administrator|head admin|owner)$/i.test(r.name))) return true;
   if (member.roles?.highest?.name && /^(admin|administrator|head admin|owner)$/i.test(member.roles.highest.name)) return true;
   return false;

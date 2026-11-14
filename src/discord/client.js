@@ -1,3 +1,4 @@
+import { setCachedBotOwnerId } from '../agent/tools.js';
 import { ActivityType, Client, GatewayIntentBits, ChannelType, Events, Partials, Options, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { setupModeratorAndChat } from './moderator.js';
@@ -261,6 +262,16 @@ async function loginClientWithFallback(token) {
   try {
     await new Promise((resolve, reject) => {
       client.once(Events.ClientReady, async (readyClient) => {
+        try {
+          await readyClient.application?.fetch?.();
+          if (readyClient.application?.owner?.id) {
+            setCachedBotOwnerId(readyClient.application.owner.id);
+          } else if (readyClient.application?.owner?.members) {
+            for (const [memberId] of readyClient.application.owner.members) {
+              setCachedBotOwnerId(memberId);
+            }
+          }
+        } catch (_) {}
         readyClient.user?.setPresence({
           activities: [{ name: 'the server | @Bobby', type: ActivityType.Watching }],
           status: 'online'

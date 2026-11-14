@@ -75,11 +75,13 @@ export function updateGuildConfig(guildId, updaterFn) {
 }
 
 export function getGuildMemories(guildId) {
+  if (!guildId || typeof guildId !== 'string') return {};
   const cfg = getGuildConfig(guildId);
   return cfg.memories || {};
 }
 
 export function setGuildMemory(guildId, key, value) {
+  if (!guildId || typeof guildId !== 'string') throw new Error('guildId must be a valid non-empty string to store memories.');
   const cleanKey = String(key).trim().toLowerCase();
   updateGuildConfig(guildId, (cfg) => {
     if (!cfg.memories) cfg.memories = {};

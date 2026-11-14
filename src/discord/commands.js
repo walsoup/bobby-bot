@@ -41,7 +41,7 @@ import {
   getGuildAutoChatChannel,
   setGuildAutoChatChannel
 } from '../util/storage.js';
-import { isStaffMember, isOwnerOrAdmin, isServerOwner, safeEvaluateMath } from '../agent/tools.js';
+import { isStaffMember, isOwnerOrAdmin, isServerOwner, isBotOwner, safeEvaluateMath } from '../agent/tools.js';
 import { getAIConfig } from '../agent/config.js';
 import { summarizeMessages, translateText } from '../agent/aiServices.js';
 import {
@@ -63,6 +63,9 @@ import {
  */
 export async function handlePrefixCommand(message, client) {
   const content = (message.content || '').trim();
+  if (!message.guild) {
+    return false;
+  }
   if (!content.startsWith('!') && !content.startsWith('?')) {
     return false;
   }
@@ -211,8 +214,8 @@ export async function handlePrefixCommand(message, client) {
 
   // 5. !remember / ?remember / !save / ?save <key> <value>
   if (cmd === 'remember' || cmd === 'save') {
-    if (!isStaffMember(message.member, message.guild)) {
-      await message.reply({ content: 'You lack staff permissions to save server memories.' });
+    if (!isOwnerOrAdmin(message.member, message.guild, client)) {
+      await message.reply({ content: 'Only the Server Owner or an Administrator can save server memories.' });
       return true;
     }
     const parts = rest.split(/\s+/);
@@ -269,8 +272,8 @@ export async function handlePrefixCommand(message, client) {
 
   // 8. !forget / ?forget <key>
   if (cmd === 'forget') {
-    if (!isStaffMember(message.member, message.guild)) {
-      await message.reply({ content: 'You lack staff permissions to delete server memories.' });
+    if (!isOwnerOrAdmin(message.member, message.guild, client)) {
+      await message.reply({ content: 'Only the Server Owner or an Administrator can delete server memories.' });
       return true;
     }
     if (!rest) {
@@ -288,8 +291,8 @@ export async function handlePrefixCommand(message, client) {
 
   // 9. !config / ?config
   if (cmd === 'config') {
-    if (!isStaffMember(message.member, message.guild)) {
-      await message.reply({ content: 'You need staff permissions to view server configuration.' });
+    if (!isOwnerOrAdmin(message.member, message.guild, client)) {
+      await message.reply({ content: 'Only the Server Owner or an Administrator can view server configuration.' });
       return true;
     }
     const cfg = getGuildConfig(message.guild.id);
@@ -322,8 +325,8 @@ export async function handlePrefixCommand(message, client) {
 
   // 10. !backup / ?backup / !export
   if (cmd === 'backup' || cmd === 'export') {
-    if (!isStaffMember(message.member, message.guild)) {
-      await message.reply({ content: 'You need staff permissions to back up server config.' });
+    if (!isOwnerOrAdmin(message.member, message.guild, client)) {
+      await message.reply({ content: 'Only the Server Owner or an Administrator can back up server config.' });
       return true;
     }
     const config = exportGuildConfig(message.guild.id);
@@ -340,7 +343,7 @@ export async function handlePrefixCommand(message, client) {
 
   // 11. !restore / ?restore / !import
   if (cmd === 'restore' || cmd === 'import') {
-    if (!isOwnerOrAdmin(message.member, message.guild)) {
+    if (!isOwnerOrAdmin(message.member, message.guild, client)) {
       await message.reply({ content: 'Only the Server Owner or an Administrator can restore configuration.' });
       return true;
     }
@@ -381,8 +384,8 @@ export async function handlePrefixCommand(message, client) {
 
   // 12. !model / ?model [model_name]
   if (cmd === 'model') {
-    if (!isOwnerOrAdmin(message.member, message.guild)) {
-      await message.reply({ content: 'Only the Server Owner or an Administrator can view or change the AI model.' });
+    if (!isBotOwner(message.author, client)) {
+      await message.reply({ content: 'Only the Bot Owner can change the AI model or preset.' });
       return true;
     }
 
@@ -416,8 +419,8 @@ export async function handlePrefixCommand(message, client) {
 
   // 13. !apiconfig / ?apiconfig
   if (cmd === 'apiconfig' || cmd === 'ai') {
-    if (!isOwnerOrAdmin(message.member, message.guild)) {
-      await message.reply({ content: 'Only the Server Owner or an Administrator can view or modify the AI provider config.' });
+    if (!isBotOwner(message.author, client)) {
+      await message.reply({ content: 'Only the Bot Owner can view or modify AI provider credentials and presets.' });
       return true;
     }
 
@@ -481,8 +484,8 @@ export async function handlePrefixCommand(message, client) {
 
   // 14. !mode / ?mode <vro|serious|pirate>
   if (cmd === 'mode' || cmd === 'persona') {
-    if (!isStaffMember(message.member, message.guild)) {
-      await message.reply({ content: "You need staff permissions to change Bobby's persona." });
+    if (!isOwnerOrAdmin(message.member, message.guild, client)) {
+      await message.reply({ content: "Only the Server Owner or an Administrator can change Bobby's persona." });
       return true;
     }
     const mode = rest.toLowerCase();
@@ -588,7 +591,7 @@ export async function handlePrefixCommand(message, client) {
 
   // 14c. !modmail <setup #channel | off>
   if (cmd === 'modmail') {
-    if (!isOwnerOrAdmin(message.member, message.guild)) {
+    if (!isOwnerOrAdmin(message.member, message.guild, client)) {
       await message.reply({ content: 'Only the Server Owner or an Administrator can configure modmail.' });
       return true;
     }
@@ -732,7 +735,7 @@ export async function handlePrefixCommand(message, client) {
   // 14g. !suggest / !suggestion <idea>
   if (cmd === 'suggest' || cmd === 'suggestion') {
     if (args[1]?.toLowerCase() === 'channel') {
-      if (!isOwnerOrAdmin(message.member, message.guild)) {
+      if (!isOwnerOrAdmin(message.member, message.guild, client)) {
         await message.reply({ content: 'Only the Server Owner or an Administrator can configure the suggestions channel.' });
         return true;
       }
@@ -1050,8 +1053,12 @@ export async function handlePrefixCommand(message, client) {
 
   // 14o. !starboard [setup #channel [threshold] | off]
   if (cmd === 'starboard') {
+    if (!isOwnerOrAdmin(message.member, message.guild, client)) {
+      await message.reply({ content: 'Only the Server Owner or an Administrator can view or configure the starboard.' });
+      return true;
+    }
     if (args[1]?.toLowerCase() === 'setup') {
-      if (!isOwnerOrAdmin(message.member, message.guild)) {
+      if (!isOwnerOrAdmin(message.member, message.guild, client)) {
         await message.reply({ content: 'Only the Server Owner or an Administrator can configure the starboard.' });
         return true;
       }
@@ -1067,7 +1074,7 @@ export async function handlePrefixCommand(message, client) {
     }
 
     if (args[1]?.toLowerCase() === 'off' || args[1]?.toLowerCase() === 'disable') {
-      if (!isOwnerOrAdmin(message.member, message.guild)) {
+      if (!isOwnerOrAdmin(message.member, message.guild, client)) {
         await message.reply({ content: 'Only the Server Owner or an Administrator can disable the starboard.' });
         return true;
       }
@@ -1109,8 +1116,8 @@ export async function handlePrefixCommand(message, client) {
     }
 
     if (sub === 'set') {
-      if (!isStaffMember(message.member, message.guild)) {
-        await message.reply({ content: 'You need staff permissions to configure random chatter.' });
+      if (!isOwnerOrAdmin(message.member, message.guild, client)) {
+        await message.reply({ content: 'Only the Server Owner or an Administrator can configure random chatter.' });
         return true;
       }
 
@@ -1209,8 +1216,8 @@ export async function handlePrefixCommand(message, client) {
     }
 
     if (sub === 'off' || sub === 'cancel' || sub === 'disable') {
-      if (!isStaffMember(message.member, message.guild)) {
-        await message.reply({ content: 'You need staff permissions to disable random chatter.' });
+      if (!isOwnerOrAdmin(message.member, message.guild, client)) {
+        await message.reply({ content: 'Only the Server Owner or an Administrator can disable random chatter.' });
         return true;
       }
 
@@ -1221,8 +1228,8 @@ export async function handlePrefixCommand(message, client) {
     }
 
     if (sub === 'trigger' || sub === 'now') {
-      if (!isStaffMember(message.member, message.guild)) {
-        await message.reply({ content: 'You need staff permissions to trigger random chatter.' });
+      if (!isOwnerOrAdmin(message.member, message.guild, client)) {
+        await message.reply({ content: 'Only the Server Owner or an Administrator can trigger random chatter.' });
         return true;
       }
 
@@ -1255,18 +1262,18 @@ export async function handlePrefixCommand(message, client) {
     }
 
     if (sub === 'off' || sub === 'disable' || sub === 'clear') {
-      if (!isStaffMember(message.member, message.guild)) {
-        await message.reply({ content: 'You need staff permissions to configure the auto-response channel.' });
-        return true;
-      }
+      if (!isOwnerOrAdmin(message.member, message.guild, client)) {
+      await message.reply({ content: 'Only the Server Owner or an Administrator can configure the auto-response channel.' });
+      return true;
+    }
       setGuildAutoChatChannel(message.guild.id, null);
       await message.reply({ content: 'Auto-response channel disabled. Bobby will only respond when mentioned or via `!ask`.' });
       return true;
     }
 
     // Set auto-response channel
-    if (!isStaffMember(message.member, message.guild)) {
-      await message.reply({ content: 'You need staff permissions to configure the auto-response channel.' });
+    if (!isOwnerOrAdmin(message.member, message.guild, client)) {
+      await message.reply({ content: 'Only the Server Owner or an Administrator can configure the auto-response channel.' });
       return true;
     }
 
@@ -1442,8 +1449,8 @@ export async function handlePrefixCommand(message, client) {
 
   // 20. !lockdown (server-wide)
   if (cmd === 'lockdown') {
-    if (!message.member.permissions.has(PermissionFlagsBits.ManageGuild) && !isOwnerOrAdmin(message.member, message.guild)) {
-      await message.reply({ content: 'Only administrators or staff with `ManageGuild` can initiate a server-wide lockdown.' });
+    if (!isOwnerOrAdmin(message.member, message.guild, client)) {
+      await message.reply({ content: 'Only the Server Owner or an Administrator can initiate a server-wide lockdown.' });
       return true;
     }
     const channels = await message.guild.channels.fetch();
@@ -1465,8 +1472,8 @@ export async function handlePrefixCommand(message, client) {
 
   // 21. !unlockall (server-wide)
   if (cmd === 'unlockall') {
-    if (!message.member.permissions.has(PermissionFlagsBits.ManageGuild) && !isOwnerOrAdmin(message.member, message.guild)) {
-      await message.reply({ content: 'Only administrators or staff with `ManageGuild` can lift a server-wide lockdown.' });
+    if (!isOwnerOrAdmin(message.member, message.guild, client)) {
+      await message.reply({ content: 'Only the Server Owner or an Administrator can lift a server-wide lockdown.' });
       return true;
     }
     const lockedIds = getGuildLockdown(message.guild.id);
@@ -1526,8 +1533,8 @@ export async function handlePrefixCommand(message, client) {
 
   // 24. !nuke
   if (cmd === 'nuke') {
-    if (!isOwnerOrAdmin(message.member, message.guild) && !message.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
-      await message.reply({ content: 'Only Administrators or managers with `ManageChannels` can nuke channels.' });
+    if (!isOwnerOrAdmin(message.member, message.guild, client)) {
+      await message.reply({ content: 'Only the Server Owner or an Administrator can nuke channels.' });
       return true;
     }
     const ch = message.channel;
@@ -1549,7 +1556,7 @@ export async function handlePrefixCommand(message, client) {
 
   // 25. !audit
   if (cmd === 'audit') {
-    if (!isOwnerOrAdmin(message.member, message.guild)) {
+    if (!isOwnerOrAdmin(message.member, message.guild, client)) {
       await message.reply({ content: 'Only the Server Owner or an Administrator can run server security audit.' });
       return true;
     }

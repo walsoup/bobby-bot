@@ -9,7 +9,8 @@ import {
 import {
   toolsRegistry,
   getToolsForMember,
-  assertMemberToolAccess
+  assertMemberToolAccess,
+  clearCachedBotOwnerIds
 } from '../src/agent/tools.js';
 import { buildSystemPrompt } from '../src/agent/systemPrompt.js';
 import {
@@ -365,6 +366,39 @@ async function run() {
     const forgetRes = await forgetTool.handler({ key: 'rules_link' }, { guildId: testGuildId });
     assert.equal(forgetRes.ok, true);
     assert.equal(forgetRes.deleted, true);
+
+    // 6. Test Multi-Server Strict Memory Isolation
+    const guildA = 'guild_alpha_' + Date.now();
+    const guildB = 'guild_beta_' + Date.now();
+
+    setGuildMemory(guildA, 'server_ip', 'mc.alpha-network.com');
+    setGuildMemory(guildA, 'owner_handle', 'alpha_king');
+
+    setGuildMemory(guildB, 'server_ip', 'play.beta-realm.org');
+    setGuildMemory(guildB, 'discord_invite', 'discord.gg/beta');
+
+    const memA = getGuildMemories(guildA);
+    const memB = getGuildMemories(guildB);
+
+    assert.equal(memA.server_ip, 'mc.alpha-network.com');
+    assert.equal(memA.owner_handle, 'alpha_king');
+    assert.equal(memA.discord_invite, undefined); // B's memory NOT in A
+
+    assert.equal(memB.server_ip, 'play.beta-realm.org');
+    assert.equal(memB.discord_invite, 'discord.gg/beta');
+    assert.equal(memB.owner_handle, undefined); // A's memory NOT in B
+
+    // Tool handler multi-server isolation
+    const recallA = await recallTool.handler({ key: 'server_ip' }, { guildId: guildA });
+    assert.equal(recallA.value, 'mc.alpha-network.com');
+
+    const recallB = await recallTool.handler({ key: 'server_ip' }, { guildId: guildB });
+    assert.equal(recallB.value, 'play.beta-realm.org');
+
+    // Deleting in guildA does NOT affect guildB
+    deleteGuildMemory(guildA, 'server_ip');
+    assert.equal(getGuildMemories(guildA).server_ip, undefined);
+    assert.equal(getGuildMemories(guildB).server_ip, 'play.beta-realm.org');
   });
 
   await test('Reaction roles storage and tool permission boundaries work properly', async () => {
@@ -795,12 +829,12 @@ async function run() {
     // 7. Regular member attempting nuke
     const nukeMsg = createMsg('!nuke', ['SendMessages']);
     await handlePrefixCommand(nukeMsg, mockClient);
-    assert.match(nukeMsg.getLastReply().content, /Only Administrators or managers with `ManageChannels`/i);
+    assert.match(nukeMsg.getLastReply().content, /Only the Server Owner or an Administrator can nuke channels/i);
 
     // 8. Staff with only ManageMessages attempting lockdown (requires ManageGuild or Administrator)
     const lockdownMsg = createMsg('!lockdown', ['ManageMessages']);
     await handlePrefixCommand(lockdownMsg, mockClient);
-    assert.match(lockdownMsg.getLastReply().content, /Only administrators or staff with `ManageGuild`/i);
+    assert.match(lockdownMsg.getLastReply().content, /Only the Server Owner or an Administrator can initiate a server-wide lockdown/i);
 
     // 9. Staff with only ManageMessages attempting starboard config (requires Admin)
     const sbModMsg = createMsg('!starboard setup #starboard', ['ManageMessages']);
@@ -810,43 +844,58 @@ async function run() {
     // 10. Non-owner attempting to modify AI model
     const modelMsg = createMsg('!model deepseek-v4.1', ['ManageMessages']);
     await handlePrefixCommand(modelMsg, mockClient);
-    assert.match(modelMsg.getLastReply().content, /Only the Server Owner or an Administrator/i);
+    assert.match(modelMsg.getLastReply().content, /Only the Bot Owner can change the AI model/i);
 
     // 11. Regular member attempting !apiconfig (with NO arguments) MUST be blocked
     const apiConfigMsg = createMsg('!apiconfig', ['SendMessages']);
     await handlePrefixCommand(apiConfigMsg, mockClient);
-    assert.match(apiConfigMsg.getLastReply().content, /Only the Server Owner or an Administrator/i);
+    assert.match(apiConfigMsg.getLastReply().content, /Only the Bot Owner can view or modify AI provider/i);
 
     // 12. Regular member attempting !apiconfig (with args) MUST be blocked
     const apiConfigSetMsg = createMsg('!apiconfig url https://evil.com', ['SendMessages']);
     await handlePrefixCommand(apiConfigSetMsg, mockClient);
-    assert.match(apiConfigSetMsg.getLastReply().content, /Only the Server Owner or an Administrator/i);
+    assert.match(apiConfigSetMsg.getLastReply().content, /Only the Bot Owner can view or modify AI provider/i);
 
     // 13. Regular member attempting !model (with NO arguments) MUST be blocked
     const modelNoArgMsg = createMsg('!model', ['SendMessages']);
     await handlePrefixCommand(modelNoArgMsg, mockClient);
-    assert.match(modelNoArgMsg.getLastReply().content, /Only the Server Owner or an Administrator/i);
+    assert.match(modelNoArgMsg.getLastReply().content, /Only the Bot Owner can change the AI model/i);
 
-    // 14. Regular member attempting !backup MUST be blocked
+    // 14. Server Owner who is NOT bot owner attempting !apiconfig is blocked
+    const serverOwnerMsg = createMsg('!apiconfig', [], true);
+    await handlePrefixCommand(serverOwnerMsg, mockClient);
+    assert.match(serverOwnerMsg.getLastReply().content, /Only the Bot Owner can view or modify AI provider/i);
+
+    // 15. Server Owner who is NOT bot owner attempting !model is blocked
+    const serverOwnerModelMsg = createMsg('!model', [], true);
+    await handlePrefixCommand(serverOwnerModelMsg, mockClient);
+    assert.match(serverOwnerModelMsg.getLastReply().content, /Only the Bot Owner can change the AI model/i);
+
+    // 16. Regular member attempting !backup MUST be blocked
     const backupMsg = createMsg('!backup', ['SendMessages']);
     await handlePrefixCommand(backupMsg, mockClient);
-    assert.match(backupMsg.getLastReply().content, /need staff permissions/i);
+    assert.match(backupMsg.getLastReply().content, /Only the Server Owner or an Administrator/i);
 
-    // 15. Server Owner running !apiconfig succeeds and gets embed
-    const ownerApiMsg = createMsg('!apiconfig', [], true);
-    await handlePrefixCommand(ownerApiMsg, mockClient);
-    assert.ok(ownerApiMsg.getLastReply().embeds?.length > 0);
+    // 17. Bot Owner running !apiconfig succeeds and gets embed
+    const botOwnerId = 'bot_owner_exclusive_777';
+    const botOwnerApiMsg = createMsg('!apiconfig', [], false);
+    botOwnerApiMsg.author.id = botOwnerId;
+    botOwnerApiMsg.member.id = botOwnerId;
+    mockClient.application = { owner: { id: botOwnerId } };
 
-    // 16. Administrator role running !apiconfig succeeds and gets embed
-    const adminApiMsg = createMsg('!apiconfig', ['Administrator'], false);
-    await handlePrefixCommand(adminApiMsg, mockClient);
-    assert.ok(adminApiMsg.getLastReply().embeds?.length > 0);
+    await handlePrefixCommand(botOwnerApiMsg, mockClient);
+    assert.ok(botOwnerApiMsg.getLastReply().embeds?.length > 0);
 
-    // 17. Member with role named "Admin" (no Administrator flag) running !apiconfig succeeds
-    const adminRoleMsg = createMsg('!apiconfig', [], false);
-    adminRoleMsg.member.roles.highest.name = 'Admin';
-    await handlePrefixCommand(adminRoleMsg, mockClient);
-    assert.ok(adminRoleMsg.getLastReply().embeds?.length > 0);
+    // 18. Bot Owner running !model succeeds and gets embed
+    const botOwnerModelMsg = createMsg('!model', [], false);
+    botOwnerModelMsg.author.id = botOwnerId;
+    botOwnerModelMsg.member.id = botOwnerId;
+    await handlePrefixCommand(botOwnerModelMsg, mockClient);
+    assert.ok(botOwnerModelMsg.getLastReply().embeds?.length > 0);
+
+    // Clean up mock bot owner so later tests do not inherit it
+    mockClient.application = null;
+    clearCachedBotOwnerIds();
   });
 
   await test('Ruthless Malformed & Adversarial Input Stress Testing', async () => {
@@ -1006,7 +1055,7 @@ async function run() {
     // Regular member blocked
     const regMsg = createMsg('!chatter set 2 10am 11pm', ['SendMessages']);
     await handlePrefixCommand(regMsg, mockClient);
-    assert.match(regMsg.getLastReply().content, /need staff permissions/i);
+    assert.match(regMsg.getLastReply().content, /Only the Server Owner or an Administrator can (configure|manage) random chatter/i);
 
     // Staff member sets chatter
     const staffMsg = createMsg('!chatter set 2 10am 11pm', ['ManageGuild']);
@@ -1069,7 +1118,7 @@ async function run() {
     // Regular member blocked from setting auto-response channel
     const regMsg = createMsg('!aichannel #talk-to-bobby', ['SendMessages']);
     await handlePrefixCommand(regMsg, mockClient);
-    assert.match(regMsg.getLastReply().content, /need staff permissions/i);
+    assert.match(regMsg.getLastReply().content, /Only the Server Owner or an Administrator can configure the auto-response channel/i);
 
     // Staff configures channel
     const staffMsg = createMsg('!aichannel set', ['ManageGuild']);
