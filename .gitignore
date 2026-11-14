@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+
+# Server settings & persistent live data
+data/settings.json
+data/*.json
+!data/settings.example.json
+
+# Builds & deployment archives
+*.zip
+dist/
+build/
+
+# Logs & Debug
+logs/
+*.log
+npm-debug.log*
+
+# OS Files
+.DS_Store
+Thumbs.db

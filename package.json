@@ -1,0 +1,25 @@
+{
+  "name": "bobby-bot",
+  "version": "2.0.0",
+  "description": "Bobby Bot - AI Discord community bot, auto-moderator, and owner-commanded server manager",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node --max-old-space-size=85 src/index.js",
+    "test": "node test/verify.js"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "ai",
+    "moderation",
+    "bobby"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.18.0",
+    "dotenv": "^16.4.7",
+    "openai": "^4.86.1",
+    "zod": "^3.24.2"
+  }
+}
