@@ -120,7 +120,7 @@ export async function handlePrefixCommand(message, client) {
         .addFields(
           { name: 'Infractions & History', value: '`!warn <@user> [reason]` — Issue formal warning.\n`!warnings <@user>` — View warning history.\n`!clearwarns <@user>` — Clear user warnings.\n`!history <@user>` — Full infraction & timeout history.' },
           { name: 'Member Discipline', value: '`!timeout <@user> <mins> [reason]` — Mute member.\n`!untimeout <@user>` — Remove timeout.\n`!kick <@user> [reason]` — Kick member.\n`!ban <@user> [reason]` — Ban member.\n`!unban <id> [reason]` — Unban user by ID.\n`!softban <@user>` — Kick + delete 7 days of messages.\n`!nick <@user> <newname|reset>` — Change nickname.' },
-          { name: 'Channel Controls', value: '`!purge <1-100>` — Bulk delete messages.\n`!slowmode <secs|off>` — Set or disable slowmode.\n`!lock` / `!unlock` — Lockdown current channel.\n`!hide` / `!unhide` — Hide channel from @everyone.\n`!nuke` — Clone and clear entire channel.\n`!lockdown` / `!unlockall` — Emergency server-wide lockdown.' }
+          { name: 'Channel Controls', value: '`!say [#ch] <msg>` — Send message through Bobby (also `!send`).\n`!purge <1-100>` — Bulk delete messages.\n`!slowmode <secs|off>` — Set or disable slowmode.\n`!lock` / `!unlock` — Lockdown current channel.\n`!hide` / `!unhide` — Hide channel from @everyone.\n`!nuke` — Clone and clear entire channel.\n`!lockdown` / `!unlockall` — Emergency server-wide lockdown.' }
         );
       await message.reply({ embeds: [embed] });
       return true;
@@ -186,7 +186,7 @@ export async function handlePrefixCommand(message, client) {
       .setTitle('Bobby')
       .setDescription('Prefixes: `!` or `?`\nType `!help <category>` (mod, community, server, util, ai)')
       .addFields(
-        { name: 'Moderation (`!help mod`)', value: '`!warn`, `!history`, `!timeout`, `!untimeout`, `!kick`, `!ban`, `!unban`, `!softban`, `!nick`, `!purge`, `!slowmode`, `!lock`, `!unlock`, `!hide`, `!nuke`, `!lockdown`' },
+        { name: 'Moderation (`!help mod`)', value: '`!warn`, `!history`, `!timeout`, `!untimeout`, `!kick`, `!ban`, `!unban`, `!softban`, `!nick`, `!say`, `!purge`, `!slowmode`, `!lock`, `!unlock`, `!hide`, `!nuke`, `!lockdown`' },
         { name: 'Community (`!help community`)', value: '`!tag`, `!tags`, `!suggest`, `!approve`, `!deny`, `!ticket`, `!close`, `!transcript`, `!gway`, `!reroll`, `!starboard`, `!chatter`' },
         { name: 'Server & Roles (`!help server`)', value: '`!roles`, `!roleinfo`, `!giverole`, `!takerole`, `!emojis`, `!enlarge`, `!addemoji`, `!serverinfo`, `!channelinfo`, `!members`, `!audit`, `!config`, `!backup`, `!restore`' },
         { name: 'Utility & Fun (`!help util`)', value: '`!remind`, `!poll`, `!choose`, `!math`, `!userinfo`, `!avatar`, `!roll`, `!flip`, `!8ball`, `!tole`' },
@@ -2102,6 +2102,110 @@ export async function handlePrefixCommand(message, client) {
       .setDescription(`[Direct Link](${url})`);
 
     await message.reply({ embeds: [embed] });
+    return true;
+  }
+
+  // !say / !send / !tell / !speak / !echo [#channel] <message>
+  if (cmd === 'say' || cmd === 'send' || cmd === 'tell' || cmd === 'speak' || cmd === 'echo') {
+    const canSendAsBot = Boolean(
+      isOwnerOrAdmin(message.member, message.guild, client) ||
+      message.member?.permissions?.has(PermissionFlagsBits.ManageMessages)
+    );
+    if (!canSendAsBot) {
+      await message.reply({ content: 'Only the Server Owner or an Administrator (or members with Manage Messages) can send messages through Bobby.' });
+      return true;
+    }
+
+    if (!rest && (!message.attachments || message.attachments.size === 0)) {
+      await message.reply({ content: 'Usage: `!say [#channel] <message>` (also `!send`)' });
+      return true;
+    }
+
+    let targetChannel = null;
+    let messageText = rest;
+
+    const firstArg = args[1];
+    if (firstArg) {
+      const channelMentionMatch = firstArg.match(/^<#([^>]+)>$/);
+      const isSnowflake = /^\d{17,20}$/.test(firstArg);
+
+      if (channelMentionMatch) {
+        const cId = channelMentionMatch[1];
+        targetChannel = message.guild?.channels?.cache?.get?.(cId) ||
+          await message.guild?.channels?.fetch?.(cId).catch(() => null);
+      } else if (message.guild?.channels?.cache?.has?.(firstArg)) {
+        targetChannel = message.guild.channels.cache.get(firstArg);
+      } else if (isSnowflake) {
+        targetChannel = await message.guild?.channels?.fetch?.(firstArg).catch(() => null);
+      } else if (firstArg.startsWith('#')) {
+        const cleanName = firstArg.slice(1).toLowerCase();
+        targetChannel = message.guild?.channels?.cache?.find?.((c) => c.name?.toLowerCase?.() === cleanName);
+        if (!targetChannel && message.guild?.channels?.fetch) {
+          const all = await message.guild.channels.fetch().catch(() => null);
+          if (all && all.find) {
+            targetChannel = all.find((c) => c.name?.toLowerCase?.() === cleanName);
+          }
+        }
+      }
+
+      if (targetChannel) {
+        messageText = rest.slice(firstArg.length).trim();
+      }
+    }
+
+    if (!targetChannel) {
+      targetChannel = message.channel;
+      messageText = rest;
+    }
+
+    const attachments = message.attachments?.size > 0
+      ? Array.from(message.attachments.values()).map((a) => a.url)
+      : [];
+
+    if (!messageText && attachments.length === 0) {
+      await message.reply({ content: 'Usage: `!say [#channel] <message>` (also `!send`)' });
+      return true;
+    }
+
+    if (!targetChannel.isTextBased || !targetChannel.isTextBased()) {
+      await message.reply({ content: 'Target channel is not a text-based channel.' });
+      return true;
+    }
+
+    // Permission check: caller must be able to view target channel
+    const callerPerms = targetChannel.permissionsFor?.(message.member);
+    if (callerPerms && !callerPerms.has(PermissionFlagsBits.ViewChannel)) {
+      await message.reply({ content: 'You do not have access to view that channel.' });
+      return true;
+    }
+
+    // Permission check: bot must be able to send messages in target channel
+    const botUser = client?.user;
+    const botPerms = targetChannel.permissionsFor?.(botUser?.id || botUser);
+    if (botPerms && (!botPerms.has(PermissionFlagsBits.ViewChannel) || !botPerms.has(PermissionFlagsBits.SendMessages))) {
+      await message.reply({ content: 'I lack permissions to send messages in that channel.' });
+      return true;
+    }
+
+    const canMentionEveryone = Boolean(
+      isOwnerOrAdmin(message.member, message.guild, client) ||
+      message.member?.permissions?.has(PermissionFlagsBits.MentionEveryone)
+    );
+    const allowedMentions = canMentionEveryone
+      ? { parse: ['users', 'roles', 'everyone'] }
+      : { parse: ['users', 'roles'] };
+
+    const payload = { allowedMentions };
+    if (messageText) payload.content = messageText;
+    if (attachments.length > 0) payload.files = attachments;
+
+    await targetChannel.send(payload);
+
+    if (targetChannel.id === message.channel.id) {
+      await message.delete().catch(() => null);
+    } else {
+      await message.reply({ content: `Message sent to <#${targetChannel.id}>.` }).catch(() => null);
+    }
     return true;
   }
 

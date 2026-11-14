@@ -37,7 +37,7 @@ Bobby embraces the Mei Mei (Tole Tole cat) culture and comes bundled with 15 ser
 
 ### Moderation & Protection
 - **Discipline:** `!warn`, `!warnings`, `!clearwarns`, `!history`, `!timeout`, `!untimeout`, `!kick`, `!ban`, `!unban`, `!softban`, `!nick`.
-- **Channel Controls:** `!purge <1-100>`, `!slowmode <secs|off>`, `!lock`, `!unlock`, `!hide`, `!unhide`, `!nuke`.
+- **Channel Controls:** `!say [#channel] <message>` (also `!send`, `!tell`), `!purge <1-100>`, `!slowmode <secs|off>`, `!lock`, `!unlock`, `!hide`, `!unhide`, `!nuke`.
 - **Emergency Lockdown:** `!lockdown` and `!unlockall` for server-wide emergency response.
 - **Fast Heuristic Auto-Mod:** Sub-millisecond mass-mention and spam flood dampening without consuming LLM API calls.
 - **Permission Auditing:** `!audit` checks administrator privileges, orphan roles, and role hierarchy safety.
@@ -70,7 +70,7 @@ Bobby embraces the Mei Mei (Tole Tole cat) culture and comes bundled with 15 ser
 
 | Category | Commands |
 | :--- | :--- |
-| **Moderation** | `!warn`, `!warnings`, `!clearwarns`, `!history`, `!timeout`, `!untimeout`, `!kick`, `!ban`, `!unban`, `!softban`, `!nick`, `!purge`, `!slowmode`, `!lock`, `!unlock`, `!hide`, `!unhide`, `!nuke`, `!lockdown`, `!unlockall` |
+| **Moderation** | `!say`, `!warn`, `!warnings`, `!clearwarns`, `!history`, `!timeout`, `!untimeout`, `!kick`, `!ban`, `!unban`, `!softban`, `!nick`, `!purge`, `!slowmode`, `!lock`, `!unlock`, `!hide`, `!unhide`, `!nuke`, `!lockdown`, `!unlockall` |
 | **Community** | `!tag`, `!tags`, `!suggest`, `!approve`, `!deny`, `!ticket`, `!close`, `!transcript`, `!gway`, `!reroll`, `!starboard` |
 | **Server & Roles** | `!roles`, `!roleinfo`, `!giverole`, `!takerole`, `!emojis`, `!enlarge`, `!addemoji`, `!serverinfo`, `!channelinfo`, `!members`, `!audit`, `!config`, `!backup`, `!restore` |
 | **Utility & Fun** | `!remind`, `!poll`, `!choose`, `!math`, `!userinfo`, `!avatar`, `!roll`, `!flip`, `!8ball`, `!tole` |

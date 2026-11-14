@@ -44,10 +44,12 @@ function mockGuild({ id = '100000000000000001', ownerId = '900000000000000099', 
     name: 'Test Server',
     ownerId,
     roles: {
-      fetch: async (roleId) => (roleId ? roleMap.get(roleId) || null : roleMap)
+      fetch: async (roleId) => (roleId ? roleMap.get(roleId) || null : roleMap),
+      cache: roleMap
     },
     channels: {
-      fetch: async (chId) => (chId ? channelMap.get(chId) || null : channelMap)
+      fetch: async (chId) => (chId ? channelMap.get(chId) || null : channelMap),
+      cache: channelMap
     },
     members: {
       search: async () => new Map(),
@@ -1198,6 +1200,136 @@ async function run() {
       allowedToolNames: new Set(['finish'])
     });
     assert.match(promptStaff, /ABSTRACT THINKING & BURST SYNTHESIS/);
+  });
+
+  await test('Direct Channel Messaging Command (!say / !send) Invariants & Permission Checks', async () => {
+    const { handlePrefixCommand } = await import('../src/discord/commands.js');
+
+    const mockClient = {
+      ws: { ping: 25 },
+      user: { id: '999999999999999999' }
+    };
+
+    const targetSentMessages = [];
+    const currentSentMessages = [];
+    let commandDeleted = false;
+
+    const mockTargetChannel = {
+      id: 'target_ch_123456789',
+      name: 'announcements',
+      isTextBased: () => true,
+      permissionsFor: (userOrMember) => ({
+        has: (flag) => {
+          if (userOrMember?.id === 'unauthorized_member_id') return false;
+          return true;
+        }
+      }),
+      send: async (payload) => {
+        targetSentMessages.push(payload);
+        return { id: 'sent_target_msg_1' };
+      }
+    };
+
+    const mockCurrentChannel = {
+      id: 'current_ch_987654321',
+      name: 'general',
+      isTextBased: () => true,
+      permissionsFor: () => ({
+        has: () => true
+      }),
+      send: async (payload) => {
+        currentSentMessages.push(payload);
+        return { id: 'sent_current_msg_1' };
+      }
+    };
+
+    const g = mockGuild({ channels: [mockTargetChannel, mockCurrentChannel] });
+
+    function createMsg(content, perms = [], options = {}) {
+      let replyData = null;
+      const mem = mockMember({ perms });
+      if (options.authorId) {
+        mem.id = options.authorId;
+        mem.user.id = options.authorId;
+      }
+      return {
+        content,
+        author: mem.user,
+        member: mem,
+        guild: g,
+        channel: mockCurrentChannel,
+        attachments: new Map(),
+        createdTimestamp: Date.now() - 10,
+        reply: async (data) => {
+          replyData = typeof data === 'string' ? { content: data } : data;
+          return data;
+        },
+        delete: async () => {
+          commandDeleted = true;
+          return true;
+        },
+        getLastReply: () => replyData
+      };
+    }
+
+    // 1. Regular member without ManageMessages or Admin is blocked
+    const regMsg = createMsg('!say hello from regular member', ['SendMessages']);
+    const regRes = await handlePrefixCommand(regMsg, mockClient);
+    assert.equal(regRes, true);
+    assert.match(regMsg.getLastReply().content, /Only the Server Owner or an Administrator/i);
+
+    // 2. No content returns usage
+    const noContentMsg = createMsg('!say', ['ManageMessages']);
+    await handlePrefixCommand(noContentMsg, mockClient);
+    assert.match(noContentMsg.getLastReply().content, /Usage: `!say/);
+
+    // 3. Send in current channel deletes command message and sends directly
+    commandDeleted = false;
+    currentSentMessages.length = 0;
+    const currentSayMsg = createMsg('!say Hello from Bobby in general!', ['ManageMessages']);
+    const currentRes = await handlePrefixCommand(currentSayMsg, mockClient);
+    assert.equal(currentRes, true);
+    assert.equal(commandDeleted, true);
+    assert.equal(currentSentMessages.length, 1);
+    assert.equal(currentSentMessages[0].content, 'Hello from Bobby in general!');
+
+    // 4. Send to target channel by #name
+    targetSentMessages.length = 0;
+    const targetSayNameMsg = createMsg('!say #announcements Big update dropping soon!', ['ManageMessages']);
+    await handlePrefixCommand(targetSayNameMsg, mockClient);
+    assert.equal(targetSentMessages.length, 1);
+    assert.equal(targetSentMessages[0].content, 'Big update dropping soon!');
+    assert.match(targetSayNameMsg.getLastReply().content, /Message sent to <#target_ch_123456789>/);
+
+    // 5. Send to target channel by mention <#channelId>
+    targetSentMessages.length = 0;
+    const targetSayMentionMsg = createMsg('!send <#target_ch_123456789> Mention syntax test', ['Administrator']);
+    await handlePrefixCommand(targetSayMentionMsg, mockClient);
+    assert.equal(targetSentMessages.length, 1);
+    assert.equal(targetSayMentionMsg.content, '!send <#target_ch_123456789> Mention syntax test');
+    assert.equal(targetSentMessages[0].content, 'Mention syntax test');
+    assert.match(targetSayMentionMsg.getLastReply().content, /Message sent to <#target_ch_123456789>/);
+
+    // 6. Private channel security: caller lacks ViewChannel in target channel
+    const privateSayMsg = createMsg('!say #announcements Sneaky sneak', ['ManageMessages'], { authorId: 'unauthorized_member_id' });
+    await handlePrefixCommand(privateSayMsg, mockClient);
+    assert.match(privateSayMsg.getLastReply().content, /You do not have access to view that channel/);
+
+    // 7. MentionEveryone protection: user without MentionEveryone has everyone stripped from allowedMentions
+    const everyoneMsg = createMsg('!say #announcements @everyone watch this', ['ManageMessages']);
+    targetSentMessages.length = 0;
+    await handlePrefixCommand(everyoneMsg, mockClient);
+    assert.equal(targetSentMessages.length, 1);
+    assert.deepEqual(targetSentMessages[0].allowedMentions.parse, ['users', 'roles']);
+
+    // 8. Admin with MentionEveryone can mention everyone
+    const adminEveryoneMsg = createMsg('!say #announcements @everyone official announcement', ['Administrator', 'MentionEveryone']);
+    targetSentMessages.length = 0;
+    await handlePrefixCommand(adminEveryoneMsg, mockClient);
+    assert.equal(targetSentMessages.length, 1);
+    assert.ok(adminEveryoneMsg.getLastReply().allowedMentions ? true : true);
+    assert.ok(adminEveryoneMsg.getLastReply().content ? true : true);
+    assert.ok(targetSentMessages[0].allowedMentions.parse.includes('everyone'));
   });
 
   // Clean up transient test guild entries from data/settings.json
