@@ -1,8 +1,35 @@
+<div align="center">
+
+<img src="assets/emojis/meimei_vro.png" width="128" height="128" alt="Bobby Mascot - Mei Mei" />
+
 # Bobby Bot
 
-Bobby is an autonomous Discord community bot, auto-moderator, and AI companion designed for 24/7 uptime on strict resource limits (<100MB RAM).
+**Autonomous Discord community bot, auto-moderator, and AI companion.**  
+*Lightweight (<100MB RAM), fast heuristic auto-mod, multi-model AI, and Mei Mei culture.*
 
-Supports both `!` and `?` prefixes as well as direct conversational `@Bobby` mentions.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-green.svg)](https://nodejs.org/)
+[![Discord.js](https://img.shields.io/badge/discord.js-v14.16.3-5865F2.svg)](https://discord.js.org/)
+
+</div>
+
+---
+
+Bobby is a 24/7 autonomous Discord server assistant designed for low resource consumption (<100MB RAM) on Discloud and VPS environments. It supports both `!` and `?` prefixes as well as direct conversational `@Bobby` mentions and dedicated auto-response channels.
+
+---
+
+## Mascot & Custom Emojis
+
+Bobby embraces the Mei Mei (Tole Tole cat) culture and comes bundled with 15 server emojis located in [`assets/emojis/`](assets/emojis/):
+
+| Emote | Name | Emote | Name | Emote | Name |
+| :---: | :--- | :---: | :--- | :---: | :--- |
+| <img src="assets/emojis/meimei_vro.png" width="44" height="44" alt="meimei_vro" /> | `meimei_vro` | <img src="assets/emojis/meimei_stare.png" width="44" height="44" alt="meimei_stare" /> | `meimei_stare` | <img src="assets/emojis/meimei_crochat.png" width="44" height="44" alt="meimei_crochat" /> | `meimei_crochat` |
+| <img src="assets/emojis/meimei_burrito.png" width="44" height="44" alt="meimei_burrito" /> | `meimei_burrito` | <img src="assets/emojis/meimei_shock.png" width="44" height="44" alt="meimei_shock" /> | `meimei_shock` | <img src="assets/emojis/meimei_polite.png" width="44" height="44" alt="meimei_polite" /> | `meimei_polite` |
+| <img src="assets/emojis/meimei_wig.png" width="44" height="44" alt="meimei_wig" /> | `meimei_wig` | <img src="assets/emojis/meimei_water.png" width="44" height="44" alt="meimei_water" /> | `meimei_water` | <img src="assets/emojis/meimei_petted.png" width="44" height="44" alt="meimei_petted" /> | `meimei_petted` |
+| <img src="assets/emojis/meimei_sink.png" width="44" height="44" alt="meimei_sink" /> | `meimei_sink` | <img src="assets/emojis/meimei_frogs.png" width="44" height="44" alt="meimei_frogs" /> | `meimei_frogs` | <img src="assets/emojis/meimei_owl.png" width="44" height="44" alt="meimei_owl" /> | `meimei_owl` |
+| <img src="assets/emojis/meimei_devil.png" width="44" height="44" alt="meimei_devil" /> | `meimei_devil` | <img src="assets/emojis/meimei_cartoon.png" width="44" height="44" alt="meimei_cartoon" /> | `meimei_cartoon` | <img src="assets/emojis/meimei_held.png" width="44" height="44" alt="meimei_held" /> | `meimei_held` |
 
 ---
 
@@ -19,8 +46,8 @@ Supports both `!` and `?` prefixes as well as direct conversational `@Bobby` men
 - **Custom Tags:** `!tag <name>`, `!tag add <name> <content>`, `!tag edit`, `!tag delete`, `!tags` with usage counters.
 - **Suggestions & Voting:** `!suggest <text>`, staff `!approve <id> [reason]`, and `!deny <id> [reason]` with dynamic embed updates.
 - **Ticket System:** `!ticket [reason]` opens private channels for user and staff; `!close` archives; `!transcript` exports text logs.
-- **Crash-Resilient Giveaways:** `!gway <time> <winners> <prize>` with human time formats (`30m`, `2h`, `1d`), live reactions (`🎉`), automatic winner selection, and `!reroll`. Survived restarts automatically resume.
-- **Starboard:** `!starboard setup <#channel> [threshold]` and `!starboard off` tracks `⭐` reactions and posts pinned highlights.
+- **Crash-Resilient Giveaways:** `!gway <time> <winners> <prize>` with human time formats (`30m`, `2h`, `1d`), live reactions, automatic winner selection, and `!reroll`. Restarts automatically resume active giveaways.
+- **Starboard:** `!starboard setup <#channel> [threshold]` and `!starboard off` tracks star reactions and posts pinned highlights.
 
 ### Server & Reaction Roles
 - **Native Reaction Roles:** Instant role self-assignment on emoji reaction (supports batch mapping).
