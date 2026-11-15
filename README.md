@@ -51,17 +51,21 @@ Bobby embraces the Mei Mei (Tole Tole cat) culture and comes bundled with 15 ser
 
 ### Server & Reaction Roles
 - **Native Reaction Roles:** Instant role self-assignment on emoji reaction (supports batch mapping).
+- **Server Timezone:** `!timezone set <zone>` (also `!tz`) locks server timezone for autonomous chatter and time formatting.
 - **Server Backup & Restore:** `!backup` exports complete configuration (welcome settings, auto-roles, reaction roles, server memories) as JSON. `!restore` imports backups instantly.
 - **Server & User Info:** `!serverinfo`, `!channelinfo`, `!userinfo`, `!avatar`, `!members`, `!roles`, `!roleinfo`.
 - **Custom Emojis:** `!emojis`, `!enlarge <emoji>`, `!addemoji <name> <url>`, and `!tole` quotes.
 
-### AI Superpowers & Chat Architecture
+### AI Superpowers & Games
+- **Interactive AI Trivia:** `!trivia [topic]` generates AI multiple-choice trivia with clickable buttons, countdown timers, explanations, and score tracking (+10 pts).
+- **AI Riddle Challenge:** `!riddle [theme]` generates poetic riddles with automated 25-second chat hints and answer detection (+15 pts).
+- **Server Game Leaderboard:** `!leaderboard` (also `!triviastats`) ranks top trivia and riddle champions per server.
 - **Per-Guild Provider Switcher:** `!model [name]` and `!apiconfig` let you switch models (DeepSeek, OpenAI, OpenRouter, local endpoints) per server without restarting.
 - **Discussion Summarizer:** `!summarize [#channel] [count]` (or `!tldr`) extracts bullet-point summaries of recent channel discussions.
 - **Multi-Language Translation:** `!translate <lang> <text>` (or `!tr`) translates messages while preserving Discord formatting and mentions.
 - **AI Modmail Triage:** Incoming user DMs are forwarded to a staff channel with structured AI triage cards (severity, category, summary, suggested actions) and staff `!reply <userId> <message>`.
 - **Dedicated Auto-Response Channel:** `!aichannel #channel` lets Bobby respond to every message in a designated channel without requiring pings.
-- **Random Contextual Chatter:** `!chatter set [#ch] <count> <startTime> <endTime>` (e.g. `!chatter set #general 2 10am 11pm`) makes Bobby read chat context and drop casual, human-like comments within specified daily hours.
+- **Random Contextual Chatter:** `!chatter set [#ch] <count> <startTime> <endTime>` (e.g. `!chatter set #general 2 10am 11pm`) makes Bobby read chat context and drop casual, human-like comments within specified daily hours in the server's local timezone.
 - **Burst Debounce & Abstract Synthesis:** In auto-chat channels, rapid-fire messages from the same user are buffered (~1.8s) and synthesized into a single coherent prompt before running the agent. Direct `@Bobby` mentions and replies execute immediately with zero delay.
 
 ---
@@ -72,8 +76,8 @@ Bobby embraces the Mei Mei (Tole Tole cat) culture and comes bundled with 15 ser
 | :--- | :--- |
 | **Moderation** | `!say`, `!warn`, `!warnings`, `!clearwarns`, `!history`, `!timeout`, `!untimeout`, `!kick`, `!ban`, `!unban`, `!softban`, `!nick`, `!purge`, `!slowmode`, `!lock`, `!unlock`, `!hide`, `!unhide`, `!nuke`, `!lockdown`, `!unlockall` |
 | **Community** | `!tag`, `!tags`, `!suggest`, `!approve`, `!deny`, `!ticket`, `!close`, `!transcript`, `!gway`, `!reroll`, `!starboard` |
-| **Server & Roles** | `!roles`, `!roleinfo`, `!giverole`, `!takerole`, `!emojis`, `!enlarge`, `!addemoji`, `!serverinfo`, `!channelinfo`, `!members`, `!audit`, `!config`, `!backup`, `!restore` |
-| **Utility & Fun** | `!remind`, `!poll`, `!choose`, `!math`, `!userinfo`, `!avatar`, `!roll`, `!flip`, `!8ball`, `!tole` |
+| **Server & Roles** | `!roles`, `!roleinfo`, `!giverole`, `!takerole`, `!emojis`, `!enlarge`, `!addemoji`, `!serverinfo`, `!channelinfo`, `!members`, `!audit`, `!config`, `!timezone`, `!backup`, `!restore` |
+| **Utility & Fun** | `!trivia`, `!riddle`, `!leaderboard`, `!remind`, `!poll`, `!choose`, `!math`, `!userinfo`, `!avatar`, `!roll`, `!flip`, `!8ball`, `!tole` |
 | **AI & Chat** | `!summarize`, `!translate`, `!modmail`, `!reply`, `!aichannel`, `!chatter`, `!ask`, `!model`, `!apiconfig`, `!mode`, `!remember`, `!recall`, `!memories`, `!forget`, `!about` |
 
 ---

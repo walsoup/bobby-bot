@@ -180,3 +180,213 @@ Rules:
     return '';
   }
 }
+
+// ---------------------------------------------------------------------------
+// Fallback Pools for Trivia & Riddles (Resilience when offline or rate-limited)
+// ---------------------------------------------------------------------------
+
+export const FALLBACK_TRIVIA_QUESTIONS = [
+  {
+    question: 'What was the original name of Mario when he first debuted in the 1981 arcade game Donkey Kong?',
+    topic: 'Gaming',
+    difficulty: 'Medium',
+    options: [
+      { key: 'A', text: 'Luigi' },
+      { key: 'B', text: 'Jumpman' },
+      { key: 'C', text: 'Plumber Pete' },
+      { key: 'D', text: 'Red Hat' }
+    ],
+    correctKey: 'B',
+    explanation: 'Shigeru Miyamoto originally named him Jumpman before Nintendo of America renamed him Mario after their landlord Mario Segale.'
+  },
+  {
+    question: 'Which planet in our solar system has the most confirmed moons as recognized by the IAU?',
+    topic: 'Science',
+    difficulty: 'Medium',
+    options: [
+      { key: 'A', text: 'Jupiter' },
+      { key: 'B', text: 'Saturn' },
+      { key: 'C', text: 'Uranus' },
+      { key: 'D', text: 'Neptune' }
+    ],
+    correctKey: 'B',
+    explanation: 'Saturn leads our solar system with over 140 confirmed moons, overtaking Jupiter in recent astronomical discoveries.'
+  },
+  {
+    question: 'In Minecraft, which item is required alongside obsidian and diamonds to craft an Enchantment Table?',
+    topic: 'Gaming',
+    difficulty: 'Easy',
+    options: [
+      { key: 'A', text: 'Book' },
+      { key: 'B', text: 'Ender Pearl' },
+      { key: 'C', text: 'Lapis Lazuli' },
+      { key: 'D', text: 'Gold Ingot' }
+    ],
+    correctKey: 'A',
+    explanation: 'You need 1 Book placed at the top, 2 Diamonds, and 4 Obsidian blocks to craft an Enchantment Table vro.'
+  },
+  {
+    question: 'What is the official national animal of Scotland?',
+    topic: 'Geography & Culture',
+    difficulty: 'Hard',
+    options: [
+      { key: 'A', text: 'Red Deer' },
+      { key: 'B', text: 'Golden Eagle' },
+      { key: 'C', text: 'Unicorn' },
+      { key: 'D', text: 'Highland Cow' }
+    ],
+    correctKey: 'C',
+    explanation: 'The mythical unicorn has been a Scottish heraldic symbol since the 12th century and remains Scotland’s official national animal.'
+  },
+  {
+    question: 'What does the abbreviation "HTTP" stand for in web network protocols?',
+    topic: 'Technology',
+    difficulty: 'Easy',
+    options: [
+      { key: 'A', text: 'HyperText Transfer Protocol' },
+      { key: 'B', text: 'High Tech Transport Process' },
+      { key: 'C', text: 'HyperText Technical Program' },
+      { key: 'D', text: 'Host To Terminal Packet' }
+    ],
+    correctKey: 'A',
+    explanation: 'HTTP stands for HyperText Transfer Protocol, the foundational protocol used for data transmission across the World Wide Web.'
+  }
+];
+
+export const FALLBACK_RIDDLES = [
+  {
+    riddle: 'I have cities, but no houses.\nI have mountains, but no trees.\nI have water, but no fish.\nWhat am I?',
+    theme: 'Everyday Objects',
+    acceptedAnswers: ['map', 'a map', 'atlas', 'an atlas'],
+    hint: 'You unfold me or zoom in on me to find your way.',
+    explanation: 'A map depicts cities, mountains, and oceans without living beings or structures.'
+  },
+  {
+    riddle: 'The more of me you take, the more you leave behind.\nWhat am I?',
+    theme: 'Concepts',
+    acceptedAnswers: ['footsteps', 'footstep', 'steps', 'step'],
+    hint: 'Look down behind you as you walk along the beach.',
+    explanation: 'Every step you take leaves behind another footstep in your path.'
+  },
+  {
+    riddle: 'I speak without a mouth and hear without ears.\nI have no body, but I come alive with wind.\nWhat am I?',
+    theme: 'Nature',
+    acceptedAnswers: ['echo', 'an echo'],
+    hint: 'Shout into a canyon and I will shout right back.',
+    explanation: 'An echo is sound bouncing back off surfaces without physical form.'
+  },
+  {
+    riddle: 'I have keys, but no locks.\nI have space, but no room.\nYou can enter, but you can never go outside.\nWhat am I?',
+    theme: 'Technology',
+    acceptedAnswers: ['keyboard', 'a keyboard', 'computer keyboard'],
+    hint: 'You are likely using one right now to type messages in chat.',
+    explanation: 'A computer keyboard has letter keys, a space bar, and an Enter key.'
+  },
+  {
+    riddle: 'I am tall when I am young, and I am short when I am old.\nWhat am I?',
+    theme: 'Everyday Objects',
+    acceptedAnswers: ['candle', 'a candle', 'pencil', 'a pencil'],
+    hint: 'I melt away as I bring light to the dark.',
+    explanation: 'A candle burns down from tall to short as time passes.'
+  }
+];
+
+/**
+ * Generate an interactive AI multiple-choice trivia question.
+ */
+export async function generateTriviaQuestion({ topic = 'general', difficulty = 'Medium', guildId = null } = {}) {
+  const cfg = getAIConfig(guildId);
+  const client = getOpenAIClient({}, guildId);
+
+  const systemPrompt = `You are Bobby's Trivia Engine. Generate an engaging, high-quality multiple choice trivia question.
+Return ONLY valid JSON matching this exact structure with NO markdown or extra text wrappers:
+{
+  "question": "The question text",
+  "topic": "The category or topic name",
+  "difficulty": "Easy" | "Medium" | "Hard",
+  "options": [
+    { "key": "A", "text": "Option 1" },
+    { "key": "B", "text": "Option 2" },
+    { "key": "C", "text": "Option 3" },
+    { "key": "D", "text": "Option 4" }
+  ],
+  "correctKey": "A" | "B" | "C" | "D",
+  "explanation": "A short, fun 1-2 sentence explanation of why this answer is correct in Bobby's casual vro style."
+}`;
+
+  const userPrompt = topic && topic.toLowerCase() !== 'general' && topic.toLowerCase() !== 'random'
+    ? `Generate a ${difficulty} trivia question about: ${topic}.`
+    : `Generate a fun, surprising ${difficulty} trivia question on a random interesting topic (gaming, pop culture, science, geography, history, anime, music).`;
+
+  try {
+    const response = await client.chat.completions.create({
+      model: cfg.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      max_tokens: 500,
+      temperature: 0.8
+    });
+
+    const raw = stripThinkTags(response.choices?.[0]?.message?.content || '');
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('AI returned non-JSON output');
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (!parsed.question || !Array.isArray(parsed.options) || parsed.options.length !== 4 || !parsed.correctKey) {
+      throw new Error('AI returned incomplete trivia structure');
+    }
+    return parsed;
+  } catch (err) {
+    const pool = FALLBACK_TRIVIA_QUESTIONS;
+    const item = pool[Math.floor(Math.random() * pool.length)];
+    return { ...item, topic: topic && topic !== 'general' ? topic : item.topic };
+  }
+}
+
+/**
+ * Generate an interactive AI riddle with accepted answer keywords and hint.
+ */
+export async function generateRiddle({ theme = 'general', guildId = null } = {}) {
+  const cfg = getAIConfig(guildId);
+  const client = getOpenAIClient({}, guildId);
+
+  const systemPrompt = `You are Bobby's Riddle Master. Generate a clever, poetic, original riddle.
+Return ONLY valid JSON matching this exact structure with NO markdown or extra text wrappers:
+{
+  "riddle": "The riddle lines (2-4 lines of poetic or clever clues)",
+  "theme": "The theme or subject category",
+  "acceptedAnswers": ["main answer", "alternative answer 1", "alternative answer 2"],
+  "hint": "A subtle, helpful clue that doesn't give away the whole answer",
+  "explanation": "Brief explanation of the answer in Bobby's chill style"
+}`;
+
+  const userPrompt = theme && theme.toLowerCase() !== 'general' && theme.toLowerCase() !== 'random'
+    ? `Generate a clever riddle themed around: ${theme}.`
+    : `Generate a fun, clever, engaging riddle on a classic or everyday object, concept, or element.`;
+
+  try {
+    const response = await client.chat.completions.create({
+      model: cfg.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      max_tokens: 500,
+      temperature: 0.85
+    });
+
+    const raw = stripThinkTags(response.choices?.[0]?.message?.content || '');
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('AI returned non-JSON output');
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (!parsed.riddle || !Array.isArray(parsed.acceptedAnswers) || parsed.acceptedAnswers.length === 0) {
+      throw new Error('AI returned incomplete riddle structure');
+    }
+    return parsed;
+  } catch (err) {
+    const pool = FALLBACK_RIDDLES;
+    const item = pool[Math.floor(Math.random() * pool.length)];
+    return { ...item, theme: theme && theme !== 'general' ? theme : item.theme };
+  }
+}

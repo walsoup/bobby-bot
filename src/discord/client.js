@@ -13,7 +13,8 @@ import {
   getGuildChatter,
   setGuildChatter,
   removeGuildChatterTrigger,
-  getAllActiveChatters
+  getAllActiveChatters,
+  getGuildTimezone
 } from '../util/storage.js';
 import { generateChatterMessage } from '../agent/aiServices.js';
 
@@ -562,15 +563,81 @@ export function formatMinutesToTime(totalMinutes) {
 }
 
 /**
+ * Extract zoned year, month, day, hour, minute, second for an IANA timezone.
+ */
+export function getTimezoneParts(date = new Date(), timeZone = 'UTC') {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timeZone || 'UTC',
+      hour12: false,
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric'
+    });
+    const parts = formatter.formatToParts(date);
+    const map = {};
+    for (const p of parts) map[p.type] = p.value;
+    return {
+      year: parseInt(map.year, 10),
+      month: parseInt(map.month, 10),
+      day: parseInt(map.day, 10),
+      hour: parseInt(map.hour, 10) % 24,
+      minute: parseInt(map.minute, 10),
+      second: parseInt(map.second, 10)
+    };
+  } catch (_) {
+    return {
+      year: date.getUTCFullYear(),
+      month: date.getUTCMonth() + 1,
+      day: date.getUTCDate(),
+      hour: date.getUTCHours(),
+      minute: date.getUTCMinutes(),
+      second: date.getUTCSeconds()
+    };
+  }
+}
+
+/**
+ * Convert local time in a given timezone to UTC epoch timestamp.
+ */
+export function zonedTimeToUtcTimestamp(year, month, day, hour, minute, second, timeZone = 'UTC') {
+  const approx = Date.UTC(year, month - 1, day, hour, minute, second);
+  const parts = getTimezoneParts(new Date(approx), timeZone);
+  const reDate = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  const offset = reDate - approx;
+  return approx - offset;
+}
+
+/**
+ * Format a Date object into human-readable string in guild's timezone.
+ */
+export function formatGuildTime(date = new Date(), timeZone = 'UTC', style = 'full') {
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: timeZone || 'UTC',
+      dateStyle: style === 'short' ? 'short' : 'full',
+      timeStyle: 'medium'
+    }).format(date);
+  } catch (_) {
+    return date.toUTCString();
+  }
+}
+
+/**
  * Calculate random trigger timestamps strictly within the start & end minutes window.
  */
-export function calculateNextTriggers(startMinutes, endMinutes, count, fromDate = new Date()) {
+export function calculateNextTriggers(startMinutes, endMinutes, count, fromDate = new Date(), timeZone = 'UTC') {
   const triggers = [];
-  const now = fromDate;
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const parts = getTimezoneParts(fromDate, timeZone);
+  const nowMinutes = parts.hour * 60 + parts.minute;
 
   const canScheduleToday = nowMinutes < (endMinutes - 15);
-  const targetDate = new Date(now);
+  let baseYear = parts.year;
+  let baseMonth = parts.month;
+  let baseDay = parts.day;
 
   let windowStart = startMinutes;
   let windowEnd = endMinutes;
@@ -580,7 +647,11 @@ export function calculateNextTriggers(startMinutes, endMinutes, count, fromDate 
       windowStart = nowMinutes + 5;
     }
   } else {
-    targetDate.setDate(targetDate.getDate() + 1);
+    const nextDayDate = new Date(fromDate.getTime() + 24 * 60 * 60 * 1000);
+    const nextParts = getTimezoneParts(nextDayDate, timeZone);
+    baseYear = nextParts.year;
+    baseMonth = nextParts.month;
+    baseDay = nextParts.day;
   }
 
   const span = windowEnd - windowStart;
@@ -591,25 +662,29 @@ export function calculateNextTriggers(startMinutes, endMinutes, count, fromDate 
     const sStart = windowStart + (i * slotSize);
     const sEnd = Math.min(windowEnd, sStart + slotSize);
     const randMin = Math.floor(sStart + Math.random() * Math.max(1, sEnd - sStart));
+    const h = Math.floor(randMin / 60) % 24;
+    const m = randMin % 60;
+    const s = Math.floor(Math.random() * 60);
 
-    const d = new Date(targetDate);
-    d.setHours(Math.floor(randMin / 60), randMin % 60, Math.floor(Math.random() * 60), 0);
-    if (d.getTime() > Date.now()) {
-      triggers.push(d.getTime());
+    const triggerTs = zonedTimeToUtcTimestamp(baseYear, baseMonth, baseDay, h, m, s, timeZone);
+    if (triggerTs > Date.now()) {
+      triggers.push(triggerTs);
     }
   }
 
   if (triggers.length === 0) {
-    const tmrw = new Date(now);
-    tmrw.setDate(tmrw.getDate() + 1);
+    const tmrwDate = new Date(fromDate.getTime() + 24 * 60 * 60 * 1000);
+    const tmrwParts = getTimezoneParts(tmrwDate, timeZone);
     const slot = Math.max(1, Math.floor((endMinutes - startMinutes) / numToSchedule));
     for (let i = 0; i < numToSchedule; i++) {
       const sStart = startMinutes + (i * slot);
       const sEnd = Math.min(endMinutes, sStart + slot);
       const randMin = Math.floor(sStart + Math.random() * Math.max(1, sEnd - sStart));
-      const d = new Date(tmrw);
-      d.setHours(Math.floor(randMin / 60), randMin % 60, Math.floor(Math.random() * 60), 0);
-      triggers.push(d.getTime());
+      const h = Math.floor(randMin / 60) % 24;
+      const m = randMin % 60;
+      const s = Math.floor(Math.random() * 60);
+      const triggerTs = zonedTimeToUtcTimestamp(tmrwParts.year, tmrwParts.month, tmrwParts.day, h, m, s, timeZone);
+      triggers.push(triggerTs);
     }
   }
 
@@ -677,7 +752,8 @@ export function scheduleGuildChatter(client, guildId) {
   let triggers = (chatter.triggers || []).filter((t) => t > now);
 
   if (triggers.length === 0) {
-    triggers = calculateNextTriggers(chatter.startMinutes, chatter.endMinutes, chatter.count || 2);
+    const tz = getGuildTimezone(guildId);
+    triggers = calculateNextTriggers(chatter.startMinutes, chatter.endMinutes, chatter.count || 2, new Date(), tz);
     setGuildChatter(guildId, { ...chatter, triggers });
   }
 

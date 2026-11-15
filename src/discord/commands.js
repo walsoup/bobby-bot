@@ -1,4 +1,4 @@
-import { EmbedBuilder, PermissionFlagsBits, ChannelType } from 'discord.js';
+import { EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import {
   getGuildConfig,
   getGuildMemories,
@@ -39,11 +39,15 @@ import {
   getGuildChatter,
   setGuildChatter,
   getGuildAutoChatChannel,
-  setGuildAutoChatChannel
+  setGuildAutoChatChannel,
+  getGuildTimezone,
+  setGuildTimezone,
+  getGuildGameScores,
+  addGuildGameScore
 } from '../util/storage.js';
 import { isStaffMember, isOwnerOrAdmin, isServerOwner, isBotOwner, safeEvaluateMath } from '../agent/tools.js';
 import { getAIConfig } from '../agent/config.js';
-import { summarizeMessages, translateText } from '../agent/aiServices.js';
+import { summarizeMessages, translateText, generateTriviaQuestion, generateRiddle } from '../agent/aiServices.js';
 import {
   resolveGiveaway,
   parseTimeString,
@@ -51,7 +55,9 @@ import {
   calculateNextTriggers,
   scheduleGuildChatter,
   clearGuildChatterTimers,
-  executeChatterTrigger
+  executeChatterTrigger,
+  formatGuildTime,
+  getTimezoneParts
 } from './client.js';
 
 /**
@@ -134,7 +140,7 @@ export async function handlePrefixCommand(message, client) {
           { name: 'Roles', value: '`!roles` — List roles in hierarchy order.\n`!roleinfo <role>` — Detailed role statistics.\n`!giverole <@user> <role>` — Assign role.\n`!takerole <@user> <role>` — Remove role.' },
           { name: 'Custom Emojis', value: '`!emojis` — List custom server emojis.\n`!enlarge <emoji>` — Full-res image link.\n`!addemoji <name> <url>` — Fast emoji upload.' },
           { name: 'Server & Channels', value: '`!serverinfo` — Server statistics.\n`!channelinfo [#ch]` — Channel information.\n`!members` — Total, humans, and bots counts.\n`!audit` — Audit admin permissions & bot hierarchy.' },
-          { name: 'Config & Backup', value: '`!config` — Active welcome & reaction roles.\n`!backup` — Export complete JSON backup.\n`!restore` — Restore configuration from JSON.' }
+          { name: 'Config & Backup', value: '`!config` — Active welcome & reaction roles.\n`!timezone [#tz]` — Server timezone (also `!tz`).\n`!backup` — Export complete JSON backup.\n`!restore` — Restore configuration from JSON.' }
         );
       await message.reply({ embeds: [embed] });
       return true;
@@ -146,7 +152,7 @@ export async function handlePrefixCommand(message, client) {
         .setTitle('Bobby — Utility & Fun')
         .addFields(
           { name: 'Utilities', value: '`!remind <time> <note>` — Persistent reminder (e.g. `10m`, `2h`, `1d`).\n`!poll <question> [| opt1 | opt2]` — Reaction poll.\n`!choose <opt1> | <opt2>` — Random decision maker.\n`!userinfo [@user]` — Member card.\n`!avatar [@user]` — Avatar direct link.' },
-          { name: 'Math & Fun', value: '`!math <expression>` — Safe math runner.\n`!roll [sides]` — Dice roll.\n`!flip` — Coin flip.\n`!8ball <question>` — Magic 8-ball.\n`!tole` — Mei Mei quotes.' }
+          { name: 'AI Games & Fun', value: '`!trivia [topic]` — AI multiple-choice trivia with buttons.\n`!riddle [theme]` — AI riddle challenge with live chat hints.\n`!leaderboard` — Server game scores (also `!triviastats`).\n`!math <expression>` — Safe math runner.\n`!roll [sides]` — Dice roll.\n`!flip` — Coin flip.\n`!8ball <question>` — Magic 8-ball.\n`!tole` — Mei Mei quotes.' }
         );
       await message.reply({ embeds: [embed] });
       return true;
@@ -188,8 +194,8 @@ export async function handlePrefixCommand(message, client) {
       .addFields(
         { name: 'Moderation (`!help mod`)', value: '`!warn`, `!history`, `!timeout`, `!untimeout`, `!kick`, `!ban`, `!unban`, `!softban`, `!nick`, `!say`, `!purge`, `!slowmode`, `!lock`, `!unlock`, `!hide`, `!nuke`, `!lockdown`' },
         { name: 'Community (`!help community`)', value: '`!tag`, `!tags`, `!suggest`, `!approve`, `!deny`, `!ticket`, `!close`, `!transcript`, `!gway`, `!reroll`, `!starboard`, `!chatter`' },
-        { name: 'Server & Roles (`!help server`)', value: '`!roles`, `!roleinfo`, `!giverole`, `!takerole`, `!emojis`, `!enlarge`, `!addemoji`, `!serverinfo`, `!channelinfo`, `!members`, `!audit`, `!config`, `!backup`, `!restore`' },
-        { name: 'Utility & Fun (`!help util`)', value: '`!remind`, `!poll`, `!choose`, `!math`, `!userinfo`, `!avatar`, `!roll`, `!flip`, `!8ball`, `!tole`' },
+        { name: 'Server & Roles (`!help server`)', value: '`!roles`, `!roleinfo`, `!giverole`, `!takerole`, `!emojis`, `!enlarge`, `!addemoji`, `!serverinfo`, `!channelinfo`, `!members`, `!audit`, `!config`, `!timezone`, `!backup`, `!restore`' },
+        { name: 'Utility & Fun (`!help util`)', value: '`!trivia`, `!riddle`, `!leaderboard`, `!remind`, `!poll`, `!choose`, `!math`, `!userinfo`, `!avatar`, `!roll`, `!flip`, `!8ball`, `!tole`' },
         { name: 'AI & Chat (`!help ai`)', value: '`!summarize`, `!translate`, `!modmail`, `!reply`, `!aichannel`, `!ask`, `!model`, `!apiconfig`, `!mode`, `!remember`, `!recall`, `!memories`, `!forget`, `!about`' }
       );
 
@@ -1240,6 +1246,93 @@ export async function handlePrefixCommand(message, client) {
     }
 
     await message.reply({ content: 'Unknown chatter subcommand. Use `!chatter help` for usage.' });
+    return true;
+  }
+
+  // !timezone / !tz [set <zone> | reset | list [filter] | status]
+  if (cmd === 'timezone' || cmd === 'tz') {
+    const sub = args[1]?.toLowerCase();
+
+    if (!sub || sub === 'status') {
+      const currentTz = getGuildTimezone(message.guild.id);
+      const localFormatted = formatGuildTime(new Date(), currentTz);
+      const embed = new EmbedBuilder()
+        .setColor('#5865F2')
+        .setTitle('Bobby — Server Timezone')
+        .addFields(
+          { name: 'Configured Timezone', value: `**\`${currentTz}\`**`, inline: true },
+          { name: 'Current Local Time', value: `\`${localFormatted}\``, inline: true }
+        )
+        .setDescription(
+          '**Timezone Commands (Admin only):**\n' +
+          '• Set timezone: `!timezone set <IANA_zone>` (e.g. `!tz set America/New_York`)\n' +
+          '• Reset timezone: `!timezone reset` (reverts to `UTC`)\n' +
+          '• Browse timezones: `!timezone list [search]` (e.g. `!tz list Europe`)'
+        );
+      await message.reply({ embeds: [embed] });
+      return true;
+    }
+
+    if (sub === 'set') {
+      if (!isOwnerOrAdmin(message.member, message.guild, client)) {
+        await message.reply({ content: 'Only the Server Owner or an Administrator can change the server timezone.' });
+        return true;
+      }
+      const targetZone = args[2]?.trim();
+      if (!targetZone) {
+        await message.reply({ content: 'Usage: `!timezone set <IANA_Timezone>`\n*Examples:* `!tz set America/New_York`, `!tz set Europe/London`, `!tz set Asia/Tokyo`, `!tz set UTC`' });
+        return true;
+      }
+      try {
+        setGuildTimezone(message.guild.id, targetZone);
+        scheduleGuildChatter(client, message.guild.id);
+        const localFormatted = formatGuildTime(new Date(), targetZone);
+        await message.reply({
+          content: `Server timezone successfully set to **\`${targetZone}\`**.\nCurrent local time: **${localFormatted}**`
+        });
+      } catch (err) {
+        await message.reply({ content: `Failed to set timezone: ${err.message}` });
+      }
+      return true;
+    }
+
+    if (sub === 'reset' || sub === 'clear') {
+      if (!isOwnerOrAdmin(message.member, message.guild, client)) {
+        await message.reply({ content: 'Only the Server Owner or an Administrator can reset the server timezone.' });
+        return true;
+      }
+      setGuildTimezone(message.guild.id, 'UTC');
+      scheduleGuildChatter(client, message.guild.id);
+      await message.reply({ content: 'Server timezone reset to default: **`UTC`**.' });
+      return true;
+    }
+
+    if (sub === 'list' || sub === 'search') {
+      const query = args[2]?.toLowerCase();
+      let zones = [];
+      try {
+        zones = Intl.supportedValuesOf('timeZone');
+      } catch (_) {
+        zones = ['UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Asia/Tokyo', 'Asia/Dubai', 'Africa/Casablanca', 'Australia/Sydney'];
+      }
+
+      if (query) {
+        zones = zones.filter((z) => z.toLowerCase().includes(query));
+      } else {
+        zones = zones.slice(0, 25);
+      }
+
+      const displayList = zones.slice(0, 25).map((z) => `• \`${z}\``).join('\n') || 'No matching timezones found.';
+      const embed = new EmbedBuilder()
+        .setColor('#5865F2')
+        .setTitle(`Bobby — Supported Timezones ${query ? `(Filter: "${query}")` : '(Sample)'}`)
+        .setDescription(displayList + (zones.length > 25 ? `\n*...and ${zones.length - 25} more.*`: ''))
+        .setFooter({ text: 'Use !timezone set <zone> to apply a timezone.' });
+      await message.reply({ embeds: [embed] });
+      return true;
+    }
+
+    await message.reply({ content: 'Unknown timezone subcommand. Use `!timezone` to view status, or `!timezone set <zone>` to configure.' });
     return true;
   }
 
@@ -2352,6 +2445,272 @@ export async function handlePrefixCommand(message, client) {
     ];
     const pick = answers[Math.floor(Math.random() * answers.length)];
     await message.reply({ content: pick });
+    return true;
+  }
+
+  // !trivia [topic]
+  if (cmd === 'trivia' || cmd === 'triv') {
+    const sub = args[1]?.toLowerCase();
+    if (sub === 'top' || sub === 'leaderboard' || sub === 'scores') {
+      const scores = getGuildGameScores(message.guild.id);
+      const ranked = Object.entries(scores)
+        .map(([uId, data]) => ({ userId: uId, ...data }))
+        .sort((a, b) => (b.points || 0) - (a.points || 0));
+
+      if (ranked.length === 0) {
+        await message.reply({ content: 'No trivia or riddle games have been completed yet on this server vro! Start one with `!trivia` or `!riddle`.' });
+        return true;
+      }
+
+      const medals = ['🥇', '🥈', '🥉'];
+      const lines = ranked.slice(0, 10).map((u, i) => {
+        const medal = medals[i] || `**${i + 1}.**`;
+        return `${medal} <@${u.userId}> — **${u.points || 0} pts** (${u.triviaWins || 0} Trivia • ${u.riddleWins || 0} Riddles)`;
+      });
+
+      const embed = new EmbedBuilder()
+        .setColor('#FEE75C')
+        .setTitle('🏆 Bobby — Server Game Leaderboard')
+        .setDescription(lines.join('\n'))
+        .setFooter({ text: 'Earn points by solving !trivia (+10 pts) and !riddle (+15 pts)!' });
+      await message.reply({ embeds: [embed] });
+      return true;
+    }
+
+    let difficulty = 'Medium';
+    let topicWords = [...args.slice(1)];
+    const diffIdx = topicWords.findIndex(w => /^(easy|medium|hard)$/i.test(w));
+    if (diffIdx !== -1) {
+      difficulty = topicWords[diffIdx][0].toUpperCase() + topicWords[diffIdx].slice(1).toLowerCase();
+      topicWords.splice(diffIdx, 1);
+    }
+    const topic = topicWords.join(' ').trim() || 'General Knowledge';
+
+    let trivia;
+    try {
+      trivia = await generateTriviaQuestion({ topic, difficulty, guildId: message.guild.id });
+    } catch (_) {
+      trivia = FALLBACK_TRIVIA_QUESTIONS[0];
+    }
+
+    const correctOption = trivia.options.find(o => o.key.toUpperCase() === trivia.correctKey.toUpperCase()) || trivia.options[0];
+
+    const embed = new EmbedBuilder()
+      .setColor('#5865F2')
+      .setTitle(`🧠 Trivia: ${trivia.topic || topic} (${trivia.difficulty || difficulty})`)
+      .setDescription(`### ${trivia.question}\n\n` + trivia.options.map(o => `**${o.key})** ${o.text}`).join('\n'))
+      .setFooter({ text: 'You have 30 seconds! Click a button or type your choice (A, B, C, D) in chat.' });
+
+    const token = Math.random().toString(36).substring(2, 8);
+    const row = new ActionRowBuilder().addComponents(
+      trivia.options.map(o =>
+        new ButtonBuilder()
+          .setCustomId(`triv_${o.key}_${token}`)
+          .setLabel(o.key)
+          .setStyle(ButtonStyle.Primary)
+      )
+    );
+
+    const triviaMsg = await message.reply({ embeds: [embed], components: [row] });
+
+    let answered = false;
+
+    const btnCollector = triviaMsg?.createMessageComponentCollector?.({
+      time: 30000
+    });
+
+    const txtCollector = message.channel?.createMessageCollector?.({
+      filter: (m) => !m.author?.bot,
+      time: 30000
+    });
+
+    const handleCorrect = async (winner) => {
+      if (answered) return;
+      answered = true;
+      btnCollector?.stop?.('correct');
+      txtCollector?.stop?.('correct');
+
+      addGuildGameScore(message.guild.id, winner.id, 10, 'trivia', winner.username);
+
+      const winRow = new ActionRowBuilder().addComponents(
+        trivia.options.map(o =>
+          new ButtonBuilder()
+            .setCustomId(`triv_end_${o.key}_${token}`)
+            .setLabel(o.key)
+            .setDisabled(true)
+            .setStyle(o.key.toUpperCase() === trivia.correctKey.toUpperCase() ? ButtonStyle.Success : ButtonStyle.Secondary)
+        )
+      );
+
+      const winEmbed = new EmbedBuilder()
+        .setColor('#57F287')
+        .setTitle(`🎉 Correct Answer! (${trivia.topic || topic})`)
+        .setDescription(
+          `**<@${winner.id}>** got it right! (+10 pts) 🧠\n\n` +
+          `**Question:** ${trivia.question}\n` +
+          `**Correct Answer:** **${trivia.correctKey}) ${correctOption.text}**\n\n` +
+          `💡 *${trivia.explanation}*`
+        );
+
+      await triviaMsg.edit?.({ embeds: [winEmbed], components: [winRow] }).catch(() => null);
+    };
+
+    btnCollector?.on?.('collect', async (interaction) => {
+      if (answered) return;
+      const clickedKey = interaction.customId.split('_')[1];
+      if (clickedKey.toUpperCase() === trivia.correctKey.toUpperCase()) {
+        await interaction.deferUpdate?.().catch(() => null);
+        await handleCorrect(interaction.user);
+      } else {
+        await interaction.reply?.({
+          content: `❌ **${clickedKey}** is incorrect, <@${interaction.user.id}>! Other players can still guess.`,
+          ephemeral: true
+        }).catch(() => null);
+      }
+    });
+
+    txtCollector?.on?.('collect', async (m) => {
+      if (answered) return;
+      const text = m.content.trim().toUpperCase();
+      const isKeyMatch = text === trivia.correctKey.toUpperCase();
+      const isTextMatch = text.toLowerCase() === correctOption.text.toLowerCase();
+      if (isKeyMatch || isTextMatch) {
+        await handleCorrect(m.author);
+      }
+    });
+
+    btnCollector?.on?.('end', async (_, reason) => {
+      if (answered || reason === 'correct') return;
+      answered = true;
+      txtCollector?.stop?.('timeout');
+
+      const timeoutRow = new ActionRowBuilder().addComponents(
+        trivia.options.map(o =>
+          new ButtonBuilder()
+            .setCustomId(`triv_timeout_${o.key}_${token}`)
+            .setLabel(o.key)
+            .setDisabled(true)
+            .setStyle(o.key.toUpperCase() === trivia.correctKey.toUpperCase() ? ButtonStyle.Success : ButtonStyle.Secondary)
+        )
+      );
+
+      const timeoutEmbed = new EmbedBuilder()
+        .setColor('#ED4245')
+        .setTitle(`⏰ Time's Up! (${trivia.topic || topic})`)
+        .setDescription(
+          `Nobody answered in time vro!\n\n` +
+          `**Question:** ${trivia.question}\n` +
+          `**Correct Answer:** **${trivia.correctKey}) ${correctOption.text}**\n\n` +
+          `💡 *${trivia.explanation}*`
+        );
+
+      await triviaMsg.edit?.({ embeds: [timeoutEmbed], components: [timeoutRow] }).catch(() => null);
+    });
+
+    return true;
+  }
+
+  // !riddle [theme]
+  if (cmd === 'riddle' || cmd === 'riddles') {
+    const theme = rest || 'General';
+
+    let riddle;
+    try {
+      riddle = await generateRiddle({ theme, guildId: message.guild.id });
+    } catch (_) {
+      riddle = FALLBACK_RIDDLES[0];
+    }
+
+    const embed = new EmbedBuilder()
+      .setColor('#9B59B6')
+      .setTitle(`🧩 Bobby's AI Riddle (${riddle.theme || theme})`)
+      .setDescription(`>>> *${riddle.riddle}*`)
+      .setFooter({ text: 'Type your guess in chat! Hint in 25s • Round ends in 45s.' });
+
+    await message.reply({ embeds: [embed] });
+
+    let solved = false;
+
+    const hintTimer = setTimeout(async () => {
+      if (!solved) {
+        await message.channel?.send?.({ content: `💡 **Riddle Hint:** *${riddle.hint}*` }).catch(() => null);
+      }
+    }, 25000);
+
+    const acceptedClean = (riddle.acceptedAnswers || []).map(a => a.toLowerCase().replace(/[^a-z0-9]/g, ''));
+
+    const collector = message.channel?.createMessageCollector?.({
+      filter: (m) => !m.author?.bot,
+      time: 45000
+    });
+
+    collector?.on?.('collect', async (m) => {
+      if (solved) return;
+      const guess = m.content.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const isMatch = acceptedClean.some(ans => guess === ans || (ans.length >= 4 && guess.includes(ans)));
+
+      if (isMatch) {
+        solved = true;
+        clearTimeout(hintTimer);
+        collector?.stop?.('solved');
+
+        addGuildGameScore(message.guild.id, m.author.id, 15, 'riddle', m.author.username);
+
+        const winEmbed = new EmbedBuilder()
+          .setColor('#57F287')
+          .setTitle('🎉 Riddle Solved!')
+          .setDescription(
+            `**<@${m.author.id}>** solved the riddle! (+15 pts) 🧠\n\n` +
+            `**Answer:** **${riddle.acceptedAnswers[0]}**\n\n` +
+            `💡 *${riddle.explanation}*`
+          );
+        await m.reply({ embeds: [winEmbed] }).catch(() => null);
+      }
+    });
+
+    collector?.on?.('end', async (_, reason) => {
+      clearTimeout(hintTimer);
+      if (solved || reason === 'solved') return;
+      solved = true;
+
+      const timeoutEmbed = new EmbedBuilder()
+        .setColor('#ED4245')
+        .setTitle('⏰ Time\'s Up!')
+        .setDescription(
+          `Nobody solved the riddle vro!\n\n` +
+          `**Answer:** **${riddle.acceptedAnswers[0]}**\n\n` +
+          `💡 *${riddle.explanation}*`
+        );
+      await message.channel?.send?.({ embeds: [timeoutEmbed] }).catch(() => null);
+    });
+
+    return true;
+  }
+
+  // !leaderboard / !triviastats / !games
+  if (cmd === 'leaderboard' || cmd === 'triviastats' || cmd === 'games' || cmd === 'gamescore') {
+    const scores = getGuildGameScores(message.guild.id);
+    const ranked = Object.entries(scores)
+      .map(([uId, data]) => ({ userId: uId, ...data }))
+      .sort((a, b) => (b.points || 0) - (a.points || 0));
+
+    if (ranked.length === 0) {
+      await message.reply({ content: 'No trivia or riddle games have been completed yet on this server vro! Start one with `!trivia` or `!riddle`.' });
+      return true;
+    }
+
+    const medals = ['🥇', '🥈', '🥉'];
+    const lines = ranked.slice(0, 10).map((u, i) => {
+      const medal = medals[i] || `**${i + 1}.**`;
+      return `${medal} <@${u.userId}> — **${u.points || 0} pts** (${u.triviaWins || 0} Trivia • ${u.riddleWins || 0} Riddles)`;
+    });
+
+    const embed = new EmbedBuilder()
+      .setColor('#FEE75C')
+      .setTitle('🏆 Bobby — Server Game Leaderboard')
+      .setDescription(lines.join('\n'))
+      .setFooter({ text: 'Earn points by solving !trivia (+10 pts) and !riddle (+15 pts)!' });
+    await message.reply({ embeds: [embed] });
     return true;
   }
 

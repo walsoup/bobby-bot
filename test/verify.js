@@ -1332,6 +1332,157 @@ async function run() {
     assert.ok(targetSentMessages[0].allowedMentions.parse.includes('everyone'));
   });
 
+  await test('Server Timezone Configuration (!timezone / !tz) and Zoned Chatter Calculation', async () => {
+    const { handlePrefixCommand } = await import('../src/discord/commands.js');
+    const { getGuildTimezone, setGuildTimezone } = await import('../src/util/storage.js');
+    const { getTimezoneParts, formatGuildTime, calculateNextTriggers, zonedTimeToUtcTimestamp } = await import('../src/discord/client.js');
+
+    const testGuildId = 'tz_test_guild_' + Date.now();
+    const mockClient = { ws: { ping: 15 }, user: { id: '999999' } };
+
+    function createMsg(content, perms = []) {
+      let replyData = null;
+      const mem = mockMember({ perms });
+      return {
+        content,
+        author: mem.user,
+        member: mem,
+        guild: mockGuild({ id: testGuildId }),
+        reply: async (data) => {
+          replyData = typeof data === 'string' ? { content: data } : data;
+          return data;
+        },
+        getLastReply: () => replyData
+      };
+    }
+
+    // 1. Initial timezone defaults to UTC
+    assert.equal(getGuildTimezone(testGuildId), 'UTC');
+
+    // 2. Status command displays current timezone and local time
+    const statusMsg = createMsg('!tz status');
+    await handlePrefixCommand(statusMsg, mockClient);
+    assert.ok(statusMsg.getLastReply().embeds?.length > 0);
+    assert.match(statusMsg.getLastReply().embeds[0].data.fields[0].value, /UTC/);
+
+    // 3. Regular member cannot set timezone
+    const regSetMsg = createMsg('!tz set America/New_York', ['SendMessages']);
+    await handlePrefixCommand(regSetMsg, mockClient);
+    assert.match(regSetMsg.getLastReply().content, /Only the Server Owner or an Administrator/i);
+
+    // 4. Admin sets timezone successfully
+    const adminSetMsg = createMsg('!tz set America/New_York', ['ManageGuild']);
+    await handlePrefixCommand(adminSetMsg, mockClient);
+    assert.match(adminSetMsg.getLastReply().content, /Server timezone successfully set to/i);
+    assert.equal(getGuildTimezone(testGuildId), 'America/New_York');
+
+    // 5. Invalid timezone returns validation error
+    const invalidSetMsg = createMsg('!tz set Mars/Olympus_Mons', ['ManageGuild']);
+    await handlePrefixCommand(invalidSetMsg, mockClient);
+    assert.match(invalidSetMsg.getLastReply().content, /Invalid IANA time zone identifier/i);
+
+    // 6. Timezone list / filter
+    const listMsg = createMsg('!tz list Tokyo');
+    await handlePrefixCommand(listMsg, mockClient);
+    assert.ok(listMsg.getLastReply().embeds?.length > 0);
+    assert.match(listMsg.getLastReply().embeds[0].data.description, /Asia\/Tokyo/);
+
+    // 7. Timezone reset to UTC
+    const resetMsg = createMsg('!tz reset', ['Administrator']);
+    await handlePrefixCommand(resetMsg, mockClient);
+    assert.match(resetMsg.getLastReply().content, /reset to default: \*\*`UTC`\*\*/);
+    assert.equal(getGuildTimezone(testGuildId), 'UTC');
+
+    // 8. Zoned time conversion precision
+    const nyParts = getTimezoneParts(new Date('2026-11-15T15:00:00Z'), 'America/New_York');
+    assert.equal(nyParts.hour, 10);
+    assert.equal(nyParts.minute, 0);
+
+    const ts = zonedTimeToUtcTimestamp(2026, 11, 15, 10, 0, 0, 'America/New_York');
+    assert.equal(new Date(ts).toISOString(), '2026-11-15T15:00:00.000Z');
+
+    // 9. Chatter trigger calculation respects guild timezone
+    const triggers = calculateNextTriggers(600, 1380, 2, new Date('2026-11-15T15:00:00Z'), 'America/New_York');
+    assert.ok(Array.isArray(triggers));
+    assert.ok(triggers.length >= 1);
+  });
+
+  await test('AI Trivia, Riddle Games, Scoreboard & Component Interaction', async () => {
+    const { handlePrefixCommand } = await import('../src/discord/commands.js');
+    const { getGuildGameScores, addGuildGameScore } = await import('../src/util/storage.js');
+    const { FALLBACK_TRIVIA_QUESTIONS, FALLBACK_RIDDLES } = await import('../src/agent/aiServices.js');
+
+    const testGuildId = 'game_test_guild_' + Date.now();
+    const mockClient = { ws: { ping: 20 }, user: { id: '999999' } };
+
+    // 1. Fallback questions & riddles validation
+    assert.ok(FALLBACK_TRIVIA_QUESTIONS.length >= 3);
+    for (const q of FALLBACK_TRIVIA_QUESTIONS) {
+      assert.ok(q.question);
+      assert.equal(q.options.length, 4);
+      assert.ok(['A', 'B', 'C', 'D'].includes(q.correctKey));
+      assert.ok(q.explanation);
+    }
+
+    assert.ok(FALLBACK_RIDDLES.length >= 3);
+    for (const r of FALLBACK_RIDDLES) {
+      assert.ok(r.riddle);
+      assert.ok(Array.isArray(r.acceptedAnswers) && r.acceptedAnswers.length > 0);
+      assert.ok(r.hint);
+    }
+
+    // 2. Score tracking works per guild
+    addGuildGameScore(testGuildId, 'user_alice', 10, 'trivia', 'Alice');
+    addGuildGameScore(testGuildId, 'user_bob', 15, 'riddle', 'Bob');
+    addGuildGameScore(testGuildId, 'user_alice', 15, 'riddle', 'Alice');
+
+    const scores = getGuildGameScores(testGuildId);
+    assert.equal(scores.user_alice.points, 25);
+    assert.equal(scores.user_alice.triviaWins, 1);
+    assert.equal(scores.user_alice.riddleWins, 1);
+    assert.equal(scores.user_bob.points, 15);
+    assert.equal(scores.user_bob.triviaWins, 0);
+    assert.equal(scores.user_bob.riddleWins, 1);
+
+    // 3. !leaderboard / !triviastats displays ranked players
+    function createMsg(content) {
+      let replyData = null;
+      const mem = mockMember({ displayName: 'Charlie' });
+      return {
+        content,
+        author: mem.user,
+        member: mem,
+        guild: mockGuild({ id: testGuildId }),
+        reply: async (data) => {
+          replyData = typeof data === 'string' ? { content: data } : data;
+          return data;
+        },
+        getLastReply: () => replyData
+      };
+    }
+
+    const lbMsg = createMsg('!leaderboard');
+    await handlePrefixCommand(lbMsg, mockClient);
+    assert.ok(lbMsg.getLastReply().embeds?.length > 0);
+    const lbDesc = lbMsg.getLastReply().embeds[0].data.description;
+    assert.match(lbDesc, /user_alice/);
+    assert.match(lbDesc, /25 pts/);
+
+    // 4. !trivia command generates embed with 4 buttons
+    const trivMsg = createMsg('!trivia general');
+    await handlePrefixCommand(trivMsg, mockClient);
+    assert.ok(trivMsg.getLastReply().embeds?.length > 0);
+    assert.ok(trivMsg.getLastReply().components?.length > 0);
+    const row = trivMsg.getLastReply().components[0];
+    assert.equal(row.components.length, 4);
+
+    // 5. !riddle command generates embed with poetic riddle and instructions
+    const ridMsg = createMsg('!riddle science');
+    await handlePrefixCommand(ridMsg, mockClient);
+    assert.ok(ridMsg.getLastReply().embeds?.length > 0);
+    assert.match(ridMsg.getLastReply().embeds[0].data.title, /AI Riddle/);
+  });
+
   // Clean up transient test guild entries from data/settings.json
   try {
     const fs = await import('fs');

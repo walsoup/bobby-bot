@@ -57,11 +57,19 @@ export function getGuildConfig(guildId) {
       suggestions: { channelId: null, list: {} },
       giveaways: {},
       starboard: { channelId: null, threshold: 3, entries: {} },
-      tickets: { counter: 0, active: {} }
+      tickets: { counter: 0, active: {} },
+      timezone: 'UTC',
+      game_scores: {}
     };
   }
   if (!all[guildId].reaction_roles) {
     all[guildId].reaction_roles = {};
+  }
+  if (!all[guildId].timezone) {
+    all[guildId].timezone = 'UTC';
+  }
+  if (!all[guildId].game_scores) {
+    all[guildId].game_scores = {};
   }
   return all[guildId];
 }
@@ -609,4 +617,67 @@ export function setGuildAutoChatChannel(guildId, channelId = null) {
     updated = cfg.auto_chat_channel;
   });
   return updated;
+}
+
+// ---------------------------------------------------------------------------
+// Server Timezone Configuration
+// ---------------------------------------------------------------------------
+
+export function getGuildTimezone(guildId) {
+  if (!guildId) return 'UTC';
+  const cfg = getGuildConfig(guildId);
+  return cfg.timezone || 'UTC';
+}
+
+export function setGuildTimezone(guildId, timezone) {
+  if (!guildId) throw new Error('guildId is required.');
+  const tz = String(timezone || '').trim();
+  // Validate IANA timezone
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: tz });
+  } catch (err) {
+    throw new Error(`Invalid IANA time zone identifier: "${tz}". Examples: America/New_York, Europe/London, UTC, Asia/Tokyo, Africa/Casablanca`);
+  }
+  updateGuildConfig(guildId, (cfg) => {
+    cfg.timezone = tz;
+  });
+  return { ok: true, timezone: tz };
+}
+
+// ---------------------------------------------------------------------------
+// Community AI Game Leaderboard & Stats
+// ---------------------------------------------------------------------------
+
+export function getGuildGameScores(guildId) {
+  if (!guildId) return {};
+  const cfg = getGuildConfig(guildId);
+  return cfg.game_scores || {};
+}
+
+export function addGuildGameScore(guildId, userId, points = 10, gameType = 'trivia', username = 'Player') {
+  if (!guildId || !userId) return null;
+  let userRecord = null;
+  updateGuildConfig(guildId, (cfg) => {
+    if (!cfg.game_scores) cfg.game_scores = {};
+    if (!cfg.game_scores[userId]) {
+      cfg.game_scores[userId] = {
+        points: 0,
+        triviaWins: 0,
+        riddleWins: 0,
+        username: username || 'Player',
+        lastPlayed: Date.now()
+      };
+    }
+    const record = cfg.game_scores[userId];
+    record.points = (record.points || 0) + points;
+    if (gameType === 'trivia') {
+      record.triviaWins = (record.triviaWins || 0) + 1;
+    } else if (gameType === 'riddle') {
+      record.riddleWins = (record.riddleWins || 0) + 1;
+    }
+    if (username) record.username = username;
+    record.lastPlayed = Date.now();
+    userRecord = { ...record };
+  });
+  return userRecord;
 }
